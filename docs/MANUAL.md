@@ -137,6 +137,27 @@ Para isolar o checkout, atualize as referências do clone no ambiente do agente 
 
 Quando todas as tarefas da sprint tiverem merge validado, use **Registrar corte** e informe uma versão como `1.2.0`. O painel guarda as tarefas e o SHA observado da `develop` de cada repositório envolvido. O corte é um registro para revisão. A publicação da release continua no fluxo do GitHub.
 
+### Custos, consumo e reset das janelas
+
+Em **Custos e limites**, escolha o projeto atual ou todos os projetos para acompanhar os valores por agente e papel. **Registrar custo** recebe a moeda, o valor e a origem. O relatório separa valores cobrados, estimativas e rateios de assinatura. Para corrigir um lançamento, abra **Lançamentos recentes** e use **Cancelar lançamento**.
+
+Agentes podem enviar o custo acumulado da execução com `registrar_custo`, antes de encerrar a reserva. Enviar novamente o mesmo tipo e moeda para a mesma execução atualiza o total, evitando duplicação. Os valores dependem do resumo de uso ou da fatura que você ou o agente informar. As estimativas de sessão do Claude Code são calculadas pelo cliente e podem diferir da cobrança efetiva. [Custos do Claude Code](https://code.claude.com/docs/en/costs)
+
+As janelas de cota pertencem à conta usada pelo agente e são compartilhadas entre projetos. **Consultar Codex local** lê percentuais e resets pelo app-server do CLI autenticado. As janelas disponíveis dependem da conta. **Informar limites** permite registrar manualmente os percentuais e horários do Claude ou Codex. O painel conserva a origem e o horário de cada leitura e, quando o reset chega, pede uma nova leitura. [App-server do Codex](https://learn.chatgpt.com/docs/app-server) · [Limites do Claude](https://support.claude.com/en/articles/11647753-how-do-usage-and-length-limits-work)
+
+Para coletar as janelas do Claude Code, configure opcionalmente o arquivo `claude-usage.mjs` como comando de statusline, com o caminho absoluto do Node e do script na máquina da sessão. O coletor envia somente percentuais e horários ao painel local. Se já usa uma statusline, integre a chamada ao seu script existente. A configuração abaixo considera uma instalação em `C:/Projetos/Orquestrador`.
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node C:/Projetos/Orquestrador/claude-usage.mjs"
+  }
+}
+```
+
+Use aspas ao redor do caminho do script se a pasta tiver espaços. Ajuste `ORQ_PORT` no ambiente do coletor se alterou a porta padrão. Os campos disponíveis na statusline dependem do cliente e do modo de autenticação. Pela sessão MCP, `registrar_limites` também aceita uma leitura informada pelo agente. [Statusline do Claude Code](https://code.claude.com/docs/en/statusline)
+
 ## 6. WSL, Docker e múltiplos projetos
 
 **WSL 2.** Confira suas distribuições com `wsl -l -v`. Se escolher o fluxo Linux, instale Node, Git e `gh` na distribuição, faça o login do GitHub nela e execute ali o painel e os CLIs. Use o caminho Linux de `mcp.mjs` nos clientes WSL. Para uma combinação de painel no WSL e Desktops no Windows, teste o endereço local no navegador Windows e a chamada MCP de ponta a ponta antes de usar o agendamento. [Instalação do WSL](https://learn.microsoft.com/windows/wsl/install) · [Rede do WSL](https://learn.microsoft.com/windows/wsl/networking)

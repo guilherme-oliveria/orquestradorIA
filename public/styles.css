@@ -110,6 +110,11 @@ td:nth-child(2){width:36%}
 .run-events{margin-top:12px}
 .run-events .copy-row{justify-content:flex-start;align-items:baseline}
 .run-events .pre{margin:0}
+.quota-cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr))}
+.quota-window{margin:15px 0}
+.quota-window .section-head{margin-bottom:7px}
+.quota-window progress{width:100%;accent-color:var(--teal);height:7px}
+.cost-summary{margin-top:13px}
 .context-actions{margin-top:12px;justify-content:flex-start}
 .copy-row{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--line);padding:8px 0}
 dialog{width:min(620px,calc(100vw - 24px));background:var(--panel);color:var(--text);border:1px solid #39485d;border-radius:14px;padding:20px;max-height:calc(100dvh - 24px)}

@@ -22,6 +22,14 @@ test('preserves separate threads for simultaneous reservations and keeps their h
   const args = { project, task: 'API-01', token: reservations[0].token, thread: 'https://example.com/session/1', message: 'Testes locais concluídos.' };
   await assert.rejects(action('update_run', args, 'claude'), /Reserva/);
   await action('update_run', args, 'codex');
+  const cost = { ...args, amount: 0.15, currency: 'USD', kind: 'estimate', source: 'Resumo da sessão' };
+  await assert.rejects(action('record_cost', cost, 'claude'), /Reserva/);
+  await action('record_cost', cost, 'codex');
+  await action('record_cost', { ...cost, amount: 0.25 }, 'codex');
+  const records = (await action('workspace', {})).projects[0].costs;
+  assert.equal(records.length, 1);
+  assert.equal(records[0].agent, 'codex');
+  assert.equal(records[0].micros, 250000);
   await action('release', args, 'codex');
   const [running, finished] = (await action('workspace', {})).projects[0].runs;
   assert.equal(running.task, 'API-02');

@@ -10,7 +10,7 @@ const stages = {
 };
 const milestones = ['Fila', 'Dev', 'PR', 'Revisão', 'Testes', 'Aprovação', 'Merge'];
 const views = {
-  pipeline: ['▦', 'Pipeline'], planning: ['◫', 'Planejamento'], runs: ['▶', 'Execuções'],
+  pipeline: ['▦', 'Pipeline'], planning: ['◫', 'Planejamento'], runs: ['▶', 'Execuções'], usage: ['◉', 'Custos e limites'],
   chat: ['◇', 'Chat do projeto'], repos: ['▣', 'Repositórios'], settings: ['⚙', 'Papéis e contexto']
 };
 const sprintStates = { planned: 'Planejada', active: 'Em andamento', done: 'Encerrada' };
@@ -61,6 +61,10 @@ const cliResults = new Map();
 const cliPending = new Set();
 let mcpChecks = {};
 let loadingChecks = false;
+let usageLimits = {};
+let queryingCodex = false;
+let costScope = 'current';
+const costKinds = { billed: 'Cobrado', estimate: 'Estimativa', allocated: 'Rateio' };
 let syncBusy = false;
 let contextBusy = false;
 let contextAudit = null;
@@ -334,6 +338,81 @@ function runs(p) {
     (cards || '<section class="panel empty">As execuções aparecem quando o PO inicia o planejamento ou quando Dev e QA reservam tarefas.</section>') + '</div>';
 }
 
+function resetCountdown(value) {
+  const remaining = Date.parse(value) - Date.now();
+  if (remaining <= 0) return 'Horário atingido · atualize a leitura';
+  const minutes = Math.ceil(remaining / 60_000);
+  return 'Faltam ' + (minutes >= 1440 ? Math.floor(minutes / 1440) + 'd ' : '') +
+    Math.floor(minutes % 1440 / 60) + 'h ' + minutes % 60 + 'min';
+}
+
+const money = (micros, currency) => new Intl.NumberFormat('pt-BR', {
+  style: 'currency', currency, maximumFractionDigits: 6
+}).format(micros / 1_000_000);
+
+function usage(p) {
+  const quotaCards = ['claude', 'codex'].map(provider => {
+    const snapshot = usageLimits[provider];
+    const windows = Object.entries({ fiveHours: 'Janela de 5 horas', weekly: 'Janela semanal' }).map(([key, label]) => {
+      const window = snapshot?.windows[key];
+      if (!window) return '<div class="quota-window"><h3>' + label + '</h3><small>Janela sem leitura</small></div>';
+      const expired = Date.parse(window.resetsAt) <= Date.now();
+      return '<div class="quota-window"><div class="section-head"><h3>' + label + '</h3>' +
+        badge(expired ? 'Atualização necessária' : window.used + '% usado', expired ? 'amber' : 'teal') + '</div>' +
+        '<progress value="' + window.used + '" max="100" aria-label="' + label + '"></progress><small>Reset · ' +
+        esc(time(window.resetsAt)) + '</small><small data-reset="' + esc(window.resetsAt) + '">' +
+        esc(resetCountdown(window.resetsAt)) + '</small></div>';
+    }).join('');
+    return '<article class="card"><div class="section-head"><h2>' + esc(connectionProviders[provider]) + '</h2>' +
+      btn('Informar limites', 'limits', 'ghost', 'data-id="' + provider + '"') + '</div>' +
+      (snapshot ? '<small>Origem · ' + esc(snapshot.source) + ' · Leitura ' + esc(time(snapshot.checkedAt)) + '</small>' : '') +
+      windows + (provider === 'codex' ? btn(queryingCodex ? 'Consultando…' : 'Consultar Codex local', 'query-codex-limits', '',
+        queryingCodex ? 'disabled' : '') : '<small>Coleta opcional pelo Claude Code · consulte o manual.</small>') + '</article>';
+  }).join('');
+  const projects = costScope === 'all' || isDemo() ? workspace : [p];
+  const entries = projects.flatMap(owner => (owner.costs || []).filter(entry => !entry.voidedAt).map(entry => ({
+    ...entry, project: owner.id, projectName: owner.name
+  })));
+  const totals = new Map();
+  const grouped = new Map();
+  for (const entry of entries) {
+    const totalKey = JSON.stringify([entry.kind, entry.currency]);
+    const key = JSON.stringify([entry.project, entry.agent, entry.role, entry.kind, entry.currency]);
+    totals.set(totalKey, (totals.get(totalKey) || 0) + entry.micros);
+    const previous = grouped.get(key);
+    grouped.set(key, { ...entry, micros: (previous?.micros || 0) + entry.micros });
+  }
+  const summary = [...totals].map(([key, amount]) => {
+    const [kind, currency] = JSON.parse(key);
+    return '<article class="card"><small>' + costKinds[kind] + ' · ' + currency + '</small><strong class="stat-value">' +
+      esc(money(amount, currency)) + '</strong></article>';
+  }).join('');
+  const rows = [...grouped.values()].map(entry => '<tr><td>' + esc(entry.projectName) + '<small>' + esc(entry.project) +
+    '</small></td><td>' + esc(names[entry.agent]) + '</td><td>' + esc(roles[entry.role]) + '</td><td>' +
+    costKinds[entry.kind] + '</td><td>' + esc(money(entry.micros, entry.currency)) + '</td></tr>').join('');
+  const ledger = entries.toReversed().slice(0, 50).map(entry => '<div class="copy-row"><div><strong>' +
+    esc(money(entry.micros, entry.currency)) + ' · ' + costKinds[entry.kind] + '</strong><small>' +
+    esc(entry.projectName) + ' · ' + esc(names[entry.agent]) + ' · ' + esc(roles[entry.role]) + ' · ' +
+    esc(entry.source) + '</small><small>' + esc(time(entry.at)) + '</small></div>' +
+    btn('Cancelar lançamento', 'void-cost', 'ghost', 'data-id="' + esc(entry.id) + '" data-project="' + esc(entry.project) + '"') + '</div>').join('');
+  return '<div class="project-sections"><section><div class="section-head"><h2>Limites da conta compartilhados entre projetos</h2>' +
+    btn('Atualizar leituras', 'refresh-usage-limits', 'ghost') + '</div><div class="repos quota-cards">' + quotaCards +
+    '</div></section><section><div class="section-head"><h2>Custos registrados</h2><label class="repo-scope">Exibir<select id="cost-scope">' +
+    options({ current: 'Projeto atual', all: 'Todos os projetos' }, costScope) + '</select></label></div>' +
+    '<p class="muted">Valores acumulados por execução, informados pelo agente ou pelo dono do projeto. Moedas e tipos de valor são apresentados separadamente.</p>' +
+    (summary ? '<div class="repos cost-summary">' + summary + '</div>' : '') +
+    '<div class="panel table-wrap"><table><thead><tr><th>Projeto</th><th>Agente</th><th>Papel</th><th>Tipo</th><th>Valor</th></tr></thead><tbody>' +
+    (rows || '<tr><td colspan="5" class="empty">Nenhum custo registrado.</td></tr>') +
+    '</tbody></table></div></section>' + (ledger ? '<details class="card"><summary>Lançamentos recentes</summary>' + ledger + '</details>' : '') + '</div>';
+}
+
+async function refreshUsageLimits() {
+  try {
+    usageLimits = await api('usage_limits', {});
+    if (view === 'usage') render();
+  } catch (error) { toast(error.message); }
+}
+
 function render() {
   const p = project();
   $('#projects').innerHTML = [...workspace, example].map(item =>
@@ -351,16 +430,17 @@ function render() {
     pipeline: ['Fluxo de entrega', 'Do planejamento à validação, com Gitflow e merge humano.', '+ Nova tarefa', 'task'],
     planning: ['Planejamento', 'Plano do PO, sprints e cortes de release deste projeto.', '', ''],
     runs: ['Execuções', 'Acompanhe tarefas paralelas, threads e worktrees dos agentes.', '', ''],
+    usage: ['Custos e limites', 'Consumo por projeto, agente e papel, com os horários de reset informados pela conta.', '+ Registrar custo', 'cost'],
     chat: ['Chat do projeto', 'Decisões e handoffs entre pessoas e agentes.', '', ''],
     repos: ['Repositórios', 'Contexto de API, web e mobile, com referências por repositório.', '+ Repositório', 'repo'],
     settings: ['Papéis e contexto', 'Defina quem planeja, implementa e revisa as próximas tarefas.', 'Editar configuração', 'config'],
     connections: ['Conexões', 'Verifique seus CLIs e confirme o acesso dos agentes ao Orquestrador.', '', '']
   }[view];
   const action = isDemo() && !showingConnections ? btn('+ Criar meu projeto', 'project', 'primary') : info[3] ? btn(info[2], info[3], 'primary') : '';
-  const body = { pipeline, planning, runs, chat, repos, settings, connections }[view](p);
+  const body = { pipeline, planning, runs, usage, chat, repos, settings, connections }[view](p);
   $('#view').innerHTML = '<div class="heading"><div><p class="eyebrow">' + esc(showingConnections ? 'CONFIGURAÇÕES' : p.name.toUpperCase()) +
     '</p><h1>' + info[0] + '</h1><p class="subtitle">' + info[1] + '</p></div>' + action + '</div>' +
-    (isDemo() && !showingConnections ? '<p class="notice">Projeto de demonstração · Os dados abaixo são ilustrativos.</p>' : '') + body;
+    (isDemo() && !showingConnections && view !== 'usage' ? '<p class="notice">Projeto de demonstração · Os dados abaixo são ilustrativos.</p>' : '') + body;
   if ($('#messages')) $('#messages').scrollTop = $('#messages').scrollHeight;
 }
 
@@ -389,6 +469,27 @@ function showModal(type, title, fields, data = {}) {
 
 function open(type, id) {
   const p = project();
+  if (type === 'cost') showModal(type, 'Registrar custo · ' + p.name,
+    textField('Valor', 'amount', '', 'required inputmode="decimal" placeholder="0,50"') +
+    '<label>Moeda<select name="currency">' + options({ USD: 'USD', BRL: 'BRL', EUR: 'EUR' }, 'USD') + '</select></label>' +
+    '<label>Tipo<select name="kind">' + options(costKinds, 'estimate') + '</select></label>' +
+    '<label>Agente<select name="agent">' + options({ claude: names.claude, codex: names.codex, gemini: names.gemini }, p.profile.dev.agent) + '</select></label>' +
+    '<label>Papel<select name="role">' + options(roles, 'dev') + '</select></label>' +
+    textField('Origem do valor', 'source', '', 'required maxlength="160" placeholder="Resumo da sessão ou fatura"'));
+  if (type === 'limits') {
+    const snapshot = usageLimits[id];
+    const dateValue = value => {
+      if (!value) return '';
+      const date = new Date(value);
+      return new Date(date.valueOf() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+    };
+    showModal(type, 'Limites · ' + connectionProviders[id],
+      '<p class="muted">Informe os valores e resets mostrados na sua conta. Preencha as janelas disponíveis.</p>' +
+      Object.entries({ fiveHours: '5 horas', weekly: 'Semanal' }).map(([key, label]) =>
+        textField('Uso ' + label + ' (%)', key + '-used', snapshot?.windows[key]?.used ?? '', 'type="number" min="0" max="100" step="0.1"') +
+        textField('Reset ' + label, key + '-reset', dateValue(snapshot?.windows[key]?.resetsAt), 'type="datetime-local"')
+      ).join(''), { provider: id });
+  }
   const sprintOptions = Object.fromEntries((p.sprints || []).map(sprint => [sprint.id, sprint.name]));
   if (type === 'plan') showModal(type, 'Plano de execução do PO',
     area('Plano em Markdown', 'markdown', p.plan?.markdown, 'required maxlength="12000"'));
@@ -466,8 +567,25 @@ document.addEventListener('click', async event => {
   } else if (action === 'navigate' || action === 'settings') {
     view = id || 'settings';
     if (view === 'connections') await refreshMcpChecks();
+    else if (view === 'usage') { render(); await refreshUsageLimits(); }
     else render();
   } else if (action === 'close') $('#dialog').close();
+  else if (action === 'refresh-usage-limits') await refreshUsageLimits();
+  else if (action === 'query-codex-limits') {
+    queryingCodex = true;
+    render();
+    try {
+      usageLimits.codex = await api('refresh_codex_limits', {});
+    } catch (error) { toast(error.message); }
+    finally { queryingCodex = false; if (view === 'usage') render(); }
+  } else if (action === 'void-cost') {
+    button.disabled = true;
+    try {
+      await api('void_cost', { project: button.dataset.project, id });
+      await load();
+      if (view === 'usage') render();
+    } catch (error) { toast(error.message); button.disabled = false; }
+  }
   else if (action === 'refresh-runs') {
     try {
       await load();
@@ -531,6 +649,7 @@ document.addEventListener('click', async event => {
         'Veja seu papel em projetos e consulte ler_planejamento. Como PO, use iniciar_planejamento, publique o plano com salvar_plano e organize as sprints. ' +
         'Como Dev ou QA, reserve uma tarefa com reservar_tarefa e confirme o perfil de modelo e esforço. Atualize as referências ' +
         'do clone antes de preparar_worktree. Registre a thread e o progresso com atualizar_execucao. ' +
+        'Se a sessão fornecer custo acumulado, informe com registrar_custo antes de liberar a reserva e indique a origem e o tipo do valor. ' +
         'Como Dev, trabalhe em feature/ ou bugfix/ a partir de develop e ' +
         'vincule o PR com vincular_pr. Como QA, revise o SHA retornado e publique review formal ou veredito no PR ' +
         'com QA: APROVADO <sha> ou QA: CORRIGIR <sha> na primeira linha. Registre o resumo com enviar_mensagem. ' +
@@ -552,6 +671,12 @@ document.addEventListener('click', async event => {
 });
 
 document.addEventListener('change', event => {
+  if (event.target.id === 'cost-scope') {
+    costScope = event.target.value;
+    render();
+    $('#cost-scope').focus({ preventScroll: true });
+    return;
+  }
   if (event.target.id === 'repo-scope') {
     repoScope = event.target.value;
     render();
@@ -592,7 +717,8 @@ document.addEventListener('submit', async event => {
     else {
       const actions = {
         project: 'create_project', config: 'settings', repo: 'add_repo', task: 'add_task', link: 'attach_pr', official: 'official_repo',
-        plan: 'save_plan', sprint: 'save_sprint', assign: 'assign_sprint', cut: 'cut_release'
+        plan: 'save_plan', sprint: 'save_sprint', assign: 'assign_sprint', cut: 'cut_release',
+        cost: 'record_cost', limits: 'save_usage_limits'
       };
       const args = { ...values, project: current };
       if (modal.type === 'project' || modal.type === 'config') args.profile = Object.fromEntries(Object.keys(roles).map(role => [
@@ -603,6 +729,17 @@ document.addEventListener('submit', async event => {
       if (modal.type === 'link') args.task = modal.task;
       if (modal.type === 'assign') args.task = modal.task;
       if (modal.type === 'sprint') args.sprint = modal.sprint;
+      if (modal.type === 'limits') {
+        args.provider = modal.provider;
+        args.windows = {};
+        for (const key of ['fiveHours', 'weekly']) {
+          const used = values[key + '-used'];
+          const reset = values[key + '-reset'];
+          if (!used && !reset) continue;
+          if (!used || !reset) throw new Error('Preencha o percentual e o reset da janela.');
+          args.windows[key] = { used: Number(used), resetsAt: new Date(reset).toISOString() };
+        }
+      }
       const result = await api(actions[modal.type], args);
       if (modal.type === 'project') { current = result.id; view = 'pipeline'; search = ''; filter = ''; }
       if (['repo', 'official'].includes(modal.type)) contextAudit = null;
@@ -610,6 +747,7 @@ document.addEventListener('submit', async event => {
       toast('Alteração salva.');
     }
     await load();
+    if (modal?.type === 'limits' && formId === 'modal') usageLimits = await api('usage_limits', {});
     render();
   } catch (error) {
     if (formId === 'modal' && $('#dialog').open) $('.modal-error').textContent = error.message;
@@ -623,12 +761,16 @@ try {
 } catch (error) { toast(error.message); }
 render();
 setInterval(async () => {
-  if (isDemo() || syncBusy || $('#dialog').open || document.activeElement?.matches('input, select, textarea')) return;
+  if ((isDemo() && view !== 'usage') || syncBusy || queryingCodex || $('#dialog').open || document.activeElement?.matches('input, select, textarea')) return;
   try {
-    const visibleData = () => ['pipeline', 'settings'].includes(view) || (view === 'repos' && repoScope === 'all') ?
-      workspace : project();
+    const visibleData = () => view === 'usage' ? { workspace, usageLimits } :
+      ['pipeline', 'settings'].includes(view) || (view === 'repos' && repoScope === 'all') ? workspace : project();
     const previous = JSON.stringify(visibleData());
     await load();
+    if (view === 'usage') usageLimits = await api('usage_limits', {});
     if (JSON.stringify(visibleData()) !== previous) render();
   } catch { /* The next refresh can recover from a server restart. */ }
 }, 7000);
+setInterval(() => {
+  for (const node of document.querySelectorAll('[data-reset]')) node.textContent = resetCountdown(node.dataset.reset);
+}, 30_000);
