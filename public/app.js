@@ -47,6 +47,7 @@ let modal;
 let timer;
 let search = '';
 let filter = '';
+let repoScope = 'current';
 let syncBusy = false;
 let contextBusy = false;
 let contextAudit = null;
@@ -95,11 +96,27 @@ function stageFor(task, p) {
 }
 
 function agentsView(p) {
+  const activeByAgent = new Map();
+  const projects = p.id === 'demo' ? [p] : workspace;
+  for (const owner of projects) {
+    for (const task of owner.tasks) {
+      if (!task.lease || task.lease.expires <= Date.now()) continue;
+      const agent = task.profile[task.lease.role].agent;
+      const reservations = activeByAgent.get(agent) || [];
+      reservations.push({ id: task.id, project: owner.name });
+      activeByAgent.set(agent, reservations);
+    }
+  }
   return Object.entries(p.profile).map(([role, config]) => {
-    const reserved = p.tasks.filter(task => task.lease?.role === role && task.profile[role].agent === config.agent).length;
+    const active = activeByAgent.get(config.agent) || [];
+    const status = active.length ? 'Ocupado' : role === 'po' ? 'Planejamento' : 'Livre';
+    const detail = active.length === 1 ? active[0].id + ' · ' + active[0].project :
+      active.length ? active.length + ' tarefas reservadas no painel' :
+      role === 'po' ? 'Contexto e criação de tarefas' : 'Sem reserva ativa no painel';
     return '<article class="card agent ' + config.agent + '"><div class="role">' + roles[role] + '</div><h3>' +
-      names[config.agent] + '</h3><div class="agent-meta">' + esc(config.model || 'Modelo do Desktop') + ' · Esforço ' +
-      esc(efforts[config.effort]) + '</div><small>' + (reserved ? reserved + ' em execução' : 'Sem reserva ativa') + '</small></article>';
+      names[config.agent] + '</h3><dl class="agent-meta"><div><dt>Modelo</dt><dd>' + esc(config.model || 'Padrão da sessão') +
+      '</dd></div><div><dt>Esforço</dt><dd>' + esc(efforts[config.effort]) + '</dd></div></dl><div class="agent-status">' +
+      badge(status, active.length ? 'amber' : role === 'po' ? 'lav' : 'teal') + '<small>' + esc(detail) + '</small></div></article>';
   }).join('');
 }
 
@@ -128,7 +145,8 @@ function pipeline(p) {
   const stats = counts.map(([label, number, icon]) => '<article class="card"><div class="stat-label">' + label +
     '<span class="stat-icon">' + icon + '</span></div><span class="stat-value">' + number + '</span></article>').join('');
   return '<div class="stats">' + stats + '</div><section><div class="section-head"><h2>Agentes e papéis</h2>' +
-    btn('Configurar papéis', 'settings', 'ghost') + '</div><div class="agents">' + agentsView(p) + '</div></section>' +
+    btn('Configurar papéis, modelos e esforço', isDemo() ? 'settings' : 'config', 'ghost') +
+    '</div><div class="agents">' + agentsView(p) + '</div></section>' +
     '<section class="panel"><div class="toolbar"><h2>Pipeline de tarefas</h2><form id="filter"><input name="search" type="search" aria-label="Buscar tarefa" placeholder="Buscar tarefa…" value="' +
     esc(search) + '"><select name="status" aria-label="Filtrar status">' +
     options({ '': 'Todos os status', ...Object.fromEntries(Object.entries(stages).map(([key, stage]) => [key, stage[0]])) }, filter) +
@@ -153,12 +171,24 @@ function chat(p) {
 }
 
 function repos(p) {
-  return '<div class="repos">' + p.repos.map(repo => '<article class="card">' + badge(repo.kind, 'lav') +
+  const showAll = p.id !== 'demo' && repoScope === 'all';
+  const projects = showAll ? workspace : [p];
+  const cards = projects.flatMap(owner => owner.repos.map(repo =>
+    '<article class="card"><div class="repo-tags">' + badge(repo.kind, 'lav') +
+    '<span class="badge teal" title="' + esc(owner.id) + '">' + esc(owner.name) + '</span></div>' +
     '<div class="repo-list"><strong>' + esc(repo.slug) + '</strong><span>Base Gitflow · develop</span>' +
     '<span>CI · ' + esc(repo.checks.join(', ') || 'Todos os checks publicados') + '</span>' +
     repo.docs.map(path => '<code>' + esc(path) + '</code>').join('') +
-    (isDemo() ? '' : '<a href="https://github.com/' + esc(repo.slug) + '" target="_blank" rel="noopener noreferrer">Abrir no GitHub ↗</a>') +
-    '</div></article>').join('') + '</div>' + (!p.repos.length ? '<section class="panel empty">Cadastre o primeiro repositório do projeto e indique os Markdown de referência.</section>' : '');
+    (owner.id === 'demo' ? '' : '<a href="https://github.com/' + esc(repo.slug) +
+      '" target="_blank" rel="noopener noreferrer">Abrir no GitHub ↗</a>') + '</div></article>'
+  ));
+  const scope = p.id === 'demo' ? '' :
+    '<label class="repo-scope">Exibir repositórios<select id="repo-scope">' +
+    options({ current: 'Projeto atual', all: 'Todos os projetos' }, repoScope) + '</select></label>';
+  const empty = showAll ? 'Nenhum repositório cadastrado nos projetos.' :
+    'Cadastre o primeiro repositório do projeto e indique os Markdown de referência.';
+  return scope + (cards.length ? '<div class="repos">' + cards.join('') + '</div>' :
+    '<section class="panel empty">' + empty + '</section>');
 }
 
 function settings(p) {
@@ -344,6 +374,12 @@ document.addEventListener('click', async event => {
 });
 
 document.addEventListener('change', event => {
+  if (event.target.id === 'repo-scope') {
+    repoScope = event.target.value;
+    render();
+    $('#repo-scope').focus({ preventScroll: true });
+    return;
+  }
   if (event.target.id !== 'preset' || !event.target.value) return;
   const preset = event.target.value;
   const form = $('#modal');
@@ -406,8 +442,10 @@ render();
 setInterval(async () => {
   if (isDemo() || syncBusy || $('#dialog').open || document.activeElement?.matches('input, select, textarea, button')) return;
   try {
-    const previous = JSON.stringify(project());
+    const visibleData = () => ['pipeline', 'settings'].includes(view) || (view === 'repos' && repoScope === 'all') ?
+      workspace : project();
+    const previous = JSON.stringify(visibleData());
     await load();
-    if (JSON.stringify(project()) !== previous) render();
+    if (JSON.stringify(visibleData()) !== previous) render();
   } catch { /* The next refresh can recover from a server restart. */ }
 }, 7000);

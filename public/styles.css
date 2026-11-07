@@ -56,7 +56,13 @@ h3{font-size:14px}
 .agent .role{color:var(--accent,var(--teal));font-size:10px;text-transform:uppercase;font-weight:750;letter-spacing:.13em;margin-bottom:7px}
 .agent.claude{--accent:var(--lav)}
 .agent.gemini{--accent:var(--amber)}
-.agent .agent-meta{color:var(--muted);font-size:12px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agent-meta{display:flex;flex-wrap:wrap;gap:7px 15px;margin:10px 0;font-size:12px}
+.agent-meta dt{color:var(--muted);font-size:11px}
+.agent-meta dd{margin:2px 0 0;overflow-wrap:anywhere}
+.agent-meta div{min-width:0;max-width:100%}
+.agent-status{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.agent-status small{margin:0;overflow-wrap:anywhere}
+.section-head>.button{white-space:normal}
 .panel{overflow:hidden}
 .toolbar{padding:13px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .toolbar form{display:flex;gap:8px;flex-wrap:wrap}
@@ -89,6 +95,9 @@ td:nth-child(2){width:36%}
 .actions{justify-content:flex-end;flex-wrap:wrap}
 .repo-list{display:grid;gap:5px;color:var(--muted);margin-top:12px;font-size:12px}
 .repo-list code{overflow-wrap:anywhere}
+.repo-scope{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:13px;color:var(--muted);font-size:12px}
+.repo-tags{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.repo-tags .badge{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .context-actions{margin-top:12px;justify-content:flex-start}
 .copy-row{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--line);padding:8px 0}
 dialog{width:min(620px,calc(100vw - 24px));background:var(--panel);color:var(--text);border:1px solid #39485d;border-radius:14px;padding:20px;max-height:calc(100dvh - 24px)}

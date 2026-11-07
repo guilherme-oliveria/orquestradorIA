@@ -104,6 +104,8 @@ Créditos adquiridos dentro de um plano e saldo de uma plataforma de API são se
 4. Crie as tarefas que quer acompanhar. Declare dependências pelos IDs das tarefas cadastradas. Para um PR já em andamento, abra a tarefa, use **Vincular PR** e informe o número. O painel valida o repo, a branch de origem `feature/` ou `bugfix/` e o destino `develop`.
 5. Clique em **Sincronizar GitHub**. A partir daí, o painel consulta os PRs vinculados periodicamente. Nesta versão, cadastros, importação de PRs e escolhas de papel são feitos por projeto.
 
+Na tela **Repositórios**, cada cartão mostra a área e o nome do projeto. Use **Todos os projetos** para ver os repositórios cadastrados em uma única lista. O botão **+ Repositório** cadastra no projeto selecionado na barra lateral.
+
 ### Da fila ao merge
 
 - O **PO** lê o contexto e registra tarefas com critérios de aceite.
@@ -112,6 +114,8 @@ Créditos adquiridos dentro de um plano e saldo de uma plataforma de API são se
 - O **dono** faz o merge no GitHub. O painel libera as dependências após verificar merge, QA e CI. Se houver um novo push, o QA precisa revisar o novo SHA.
 
 Para usar agendamentos, abra **Papéis e contexto → Copiar instruções da sessão** e inclua o texto no agendamento existente. Teste primeiro a sessão local. A execução agendada precisa alcançar o MCP e o painel. Uma execução inteiramente na nuvem não alcança o `127.0.0.1` desta máquina. Modelo e esforço são preferências salvas na tarefa. Configure o modelo efetivo no cliente que roda a sessão.
+
+Em **Agentes e papéis**, o painel mostra o modelo e o esforço configurados. **Ocupado** indica uma reserva ativa, inclusive quando a tarefa é de outro projeto do painel. **Livre** indica que o Dev ou QA está sem reserva ativa. A cota do provedor e sessões externas são consultadas no cliente de cada agente.
 
 ### Checklist para o primeiro PR real
 
