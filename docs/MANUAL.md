@@ -127,6 +127,16 @@ Em **Agentes e papéis**, o painel mostra o modelo e o esforço configurados. **
 - [ ] O GitHub publica os checks do CI e o login cadastrado para o QA consegue registrar o veredito.
 - [ ] Após o merge, o painel indica a tarefa como validada e libera as dependentes.
 
+### Planejamento, execuções e worktrees
+
+Em **Planejamento**, o dono pode editar o plano em Markdown e o PO pode publicá-lo pela ferramenta `salvar_plano`. Crie sprints com objetivo e datas. Escolha a sprint no cadastro da tarefa ou use **Definir sprint** nos detalhes de uma tarefa existente. Os agentes consultam o plano e as sprints com `ler_planejamento`.
+
+Em **Execuções**, cada reserva de Dev ou QA tem um histórico próprio. Sessões distintas podem reservar tarefas diferentes em paralelo. O PO também pode abrir uma execução com `iniciar_planejamento`. Use `atualizar_execucao` para registrar o ID ou link da thread e os marcos do trabalho. Informe o ID da tarefa para Dev e QA ou o ID da execução para o PO. O painel atualiza a lista e conserva o histórico após o fim da reserva. As atualizações vêm das ferramentas chamadas pelo agente.
+
+Para isolar o checkout, atualize as referências do clone no ambiente do agente e chame `preparar_worktree` com o caminho absoluto do clone, o projeto, a tarefa e o token da reserva. O conector verifica se o `origin` corresponde ao repositório cadastrado e cria a worktree ao lado do clone, dentro de `.orquestrador-worktrees`. O Dev usa a branch da tarefa. O QA recebe um checkout isolado no SHA do PR. Se outro cliente já criou uma worktree, informe o caminho em `atualizar_execucao`. A worktree permanece disponível após a reserva para permitir retomada e revisão do trabalho.
+
+Quando todas as tarefas da sprint tiverem merge validado, use **Registrar corte** e informe uma versão como `1.2.0`. O painel guarda as tarefas e o SHA observado da `develop` de cada repositório envolvido. O corte é um registro para revisão. A publicação da release continua no fluxo do GitHub.
+
 ## 6. WSL, Docker e múltiplos projetos
 
 **WSL 2.** Confira suas distribuições com `wsl -l -v`. Se escolher o fluxo Linux, instale Node, Git e `gh` na distribuição, faça o login do GitHub nela e execute ali o painel e os CLIs. Use o caminho Linux de `mcp.mjs` nos clientes WSL. Para uma combinação de painel no WSL e Desktops no Windows, teste o endereço local no navegador Windows e a chamada MCP de ponta a ponta antes de usar o agendamento. [Instalação do WSL](https://learn.microsoft.com/windows/wsl/install) · [Rede do WSL](https://learn.microsoft.com/windows/wsl/networking)

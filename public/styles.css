@@ -104,6 +104,12 @@ td:nth-child(2){width:36%}
 .connection-card{display:grid;gap:13px}
 .connection-card h3{margin-bottom:5px}
 .connection-card .actions{justify-content:flex-start}
+.project-sections{display:grid;gap:14px}
+.project-sections details summary{cursor:pointer;font-weight:650}
+.project-actions{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}
+.run-events{margin-top:12px}
+.run-events .copy-row{justify-content:flex-start;align-items:baseline}
+.run-events .pre{margin:0}
 .context-actions{margin-top:12px;justify-content:flex-start}
 .copy-row{display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--line);padding:8px 0}
 dialog{width:min(620px,calc(100vw - 24px));background:var(--panel);color:var(--text);border:1px solid #39485d;border-radius:14px;padding:20px;max-height:calc(100dvh - 24px)}

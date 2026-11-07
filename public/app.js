@@ -9,7 +9,15 @@ const stages = {
   'merged-unverified': ['Merge sem validação', 'red', 6], closed: ['PR fechado', '', 2], error: ['Falha na sincronização', 'red', 2]
 };
 const milestones = ['Fila', 'Dev', 'PR', 'Revisão', 'Testes', 'Aprovação', 'Merge'];
-const views = { pipeline: ['▦', 'Pipeline'], chat: ['◇', 'Chat do projeto'], repos: ['▣', 'Repositórios'], settings: ['⚙', 'Papéis e contexto'] };
+const views = {
+  pipeline: ['▦', 'Pipeline'], planning: ['◫', 'Planejamento'], runs: ['▶', 'Execuções'],
+  chat: ['◇', 'Chat do projeto'], repos: ['▣', 'Repositórios'], settings: ['⚙', 'Papéis e contexto']
+};
+const sprintStates = { planned: 'Planejada', active: 'Em andamento', done: 'Encerrada' };
+const runStates = {
+  active: ['Em execução', 'teal'], finished: ['Encerrada', ''], expired: ['Reserva expirada', 'amber'],
+  superseded: ['PR atualizado', 'lav']
+};
 const defaultProfile = {
   po: { agent: 'claude', model: '', effort: 'default', login: '' },
   dev: { agent: 'claude', model: '', effort: 'default', login: '' },
@@ -104,6 +112,12 @@ function agentsView(p) {
   const activeByAgent = new Map();
   const projects = p.id === 'demo' ? [p] : workspace;
   for (const owner of projects) {
+    for (const run of owner.runs || []) {
+      if (run.role !== 'po' || run.status !== 'active' || run.expires <= Date.now()) continue;
+      const reservations = activeByAgent.get(run.agent) || [];
+      reservations.push({ id: 'Planejamento', project: owner.name });
+      activeByAgent.set(run.agent, reservations);
+    }
     for (const task of owner.tasks) {
       if (!task.lease || task.lease.expires <= Date.now()) continue;
       const agent = task.profile[task.lease.role].agent;
@@ -262,6 +276,64 @@ async function refreshMcpChecks() {
   }
 }
 
+function planning(p) {
+  const plan = p.plan;
+  const editPlan = isDemo() ? '' : btn(plan ? 'Editar plano' : 'Criar plano', 'plan', 'ghost');
+  const planCard = '<section class="card"><div class="section-head"><h2>Plano de execução do PO</h2>' + editPlan +
+    '</div>' + (plan ? '<small>Atualizado por ' + esc(names[plan.author]) + ' · ' + esc(time(plan.updatedAt)) +
+    '</small><div class="pre">' + esc(plan.markdown) + '</div>' : '<p class="muted">O plano em Markdown aparece aqui quando o PO ou o dono do projeto o publicar.</p>') +
+    '</section>';
+  const sprintCards = (p.sprints || []).map(sprint => {
+    const tasks = p.tasks.filter(task => task.sprint === sprint.id);
+    const done = tasks.filter(task => task.observation?.stage === 'merged').length;
+    const taskButtons = tasks.map(task => btn(esc(task.id), 'details', 'ghost', 'data-id="' + esc(task.id) + '"')).join('');
+    const dates = [sprint.start, sprint.end].filter(Boolean).map(date => date.split('-').reverse().join('/')).join(' → ');
+    return '<article class="card"><div class="section-head"><h3>' + esc(sprint.name) + '</h3>' +
+      badge(sprintStates[sprint.status], sprint.status === 'active' ? 'teal' : '') + '</div>' +
+      (dates ? '<small>' + esc(dates) + '</small>' : '') + (sprint.goal ? '<p class="pre muted">' + esc(sprint.goal) + '</p>' : '') +
+      '<p class="subtitle">' + done + ' de ' + tasks.length + ' com merge validado</p><div class="project-actions">' +
+      taskButtons + '</div>' + btn('Editar sprint', 'sprint', 'ghost', 'data-id="' + esc(sprint.id) + '"') + '</article>';
+  }).join('');
+  const cuts = (p.releases || []).toReversed().map(release =>
+    '<details class="card"><summary>v' + esc(release.version) + ' · ' + esc(release.sprintName) + ' · ' +
+    release.tasks.length + ' tarefas</summary><small>Corte registrado em ' + esc(time(release.cutAt)) + '</small><div class="repo-list">' +
+    release.refs.map(ref => '<div>' + esc(ref.repo) + ' · <code>' + esc(ref.sha) + '</code></div>').join('') +
+    release.tasks.map(task => '<div>' + esc(task.id) + ' · ' + esc(task.repo) + (task.pr ? ' · PR #' + task.pr : '') + '</div>').join('') +
+    '</div></details>'
+  ).join('');
+  return '<div class="project-sections">' + planCard + '<section><div class="section-head"><h2>Sprints</h2>' +
+    (isDemo() ? '' : btn('Nova sprint', 'sprint', 'ghost')) + '</div>' +
+    (sprintCards ? '<div class="repos">' + sprintCards + '</div>' : '<p class="panel empty">Nenhuma sprint cadastrada.</p>') +
+    '</section><section><div class="section-head"><h2>Cortes de release</h2>' +
+    (isDemo() ? '' : btn('Registrar corte', 'cut', 'ghost', p.sprints?.length ? '' : 'disabled')) + '</div>' +
+    (cuts || '<p class="panel empty">O corte guarda os commits da develop quando todas as tarefas da sprint têm merge validado.</p>') +
+    '</section></div>';
+}
+
+function runs(p) {
+  const entries = p.runs || [];
+  const cards = entries.map(run => {
+    const [status, tone] = runStates[run.status];
+    const title = p.tasks.find(task => task.id === run.task)?.title || run.task;
+    const thread = run.thread && /^https:\/\//i.test(run.thread) ?
+      '<a href="' + esc(run.thread) + '" target="_blank" rel="noopener noreferrer">Abrir thread ↗</a>' :
+      esc(run.thread || 'Aguardando registro');
+    const heading = run.task ? run.task + ' · ' + title : 'Plano de execução';
+    return '<article class="card"><div class="section-head"><div><h3>' + esc(heading) +
+      '</h3><small>' + esc(names[run.agent]) + ' · ' + esc(roles[run.role]) + (run.repo ? ' · ' + esc(run.repo) : '') +
+      '</small></div>' + badge(status, tone) + '</div><div class="repo-list"><span>Início · ' + esc(time(run.startedAt)) +
+      ' · Última atualização · ' + esc(time(run.updatedAt)) + '</span><span>Thread · ' + thread + '</span>' +
+      (run.worktree ? '<span>Worktree · <code>' + esc(run.worktree) + '</code></span>' : '') +
+      (run.branch ? '<span>Branch · <code>' + esc(run.branch) + '</code></span>' : '') +
+      '</div>' + (run.events.length ? '<details class="run-events" open><summary>Progresso informado pelo agente</summary>' +
+        run.events.toReversed().map(event => '<div class="copy-row"><small>' + esc(time(event.at)) + '</small><p class="pre">' +
+          esc(event.message) + '</p></div>').join('') + '</details>' : '') + '</article>';
+  }).join('');
+  return '<div class="section-head"><p class="muted">Cada reserva tem seu próprio histórico. As atualizações chegam pelo MCP.</p>' +
+    (isDemo() ? '' : btn('Atualizar execuções', 'refresh-runs', 'ghost')) + '</div><div class="project-sections">' +
+    (cards || '<section class="panel empty">As execuções aparecem quando o PO inicia o planejamento ou quando Dev e QA reservam tarefas.</section>') + '</div>';
+}
+
 function render() {
   const p = project();
   $('#projects').innerHTML = [...workspace, example].map(item =>
@@ -277,13 +349,15 @@ function render() {
   $('#sync').disabled = isDemo() || syncBusy;
   const info = {
     pipeline: ['Fluxo de entrega', 'Do planejamento à validação, com Gitflow e merge humano.', '+ Nova tarefa', 'task'],
+    planning: ['Planejamento', 'Plano do PO, sprints e cortes de release deste projeto.', '', ''],
+    runs: ['Execuções', 'Acompanhe tarefas paralelas, threads e worktrees dos agentes.', '', ''],
     chat: ['Chat do projeto', 'Decisões e handoffs entre pessoas e agentes.', '', ''],
     repos: ['Repositórios', 'Contexto de API, web e mobile, com referências por repositório.', '+ Repositório', 'repo'],
     settings: ['Papéis e contexto', 'Defina quem planeja, implementa e revisa as próximas tarefas.', 'Editar configuração', 'config'],
     connections: ['Conexões', 'Verifique seus CLIs e confirme o acesso dos agentes ao Orquestrador.', '', '']
   }[view];
   const action = isDemo() && !showingConnections ? btn('+ Criar meu projeto', 'project', 'primary') : info[3] ? btn(info[2], info[3], 'primary') : '';
-  const body = { pipeline, chat, repos, settings, connections }[view](p);
+  const body = { pipeline, planning, runs, chat, repos, settings, connections }[view](p);
   $('#view').innerHTML = '<div class="heading"><div><p class="eyebrow">' + esc(showingConnections ? 'CONFIGURAÇÕES' : p.name.toUpperCase()) +
     '</p><h1>' + info[0] + '</h1><p class="subtitle">' + info[1] + '</p></div>' + action + '</div>' +
     (isDemo() && !showingConnections ? '<p class="notice">Projeto de demonstração · Os dados abaixo são ilustrativos.</p>' : '') + body;
@@ -315,6 +389,27 @@ function showModal(type, title, fields, data = {}) {
 
 function open(type, id) {
   const p = project();
+  const sprintOptions = Object.fromEntries((p.sprints || []).map(sprint => [sprint.id, sprint.name]));
+  if (type === 'plan') showModal(type, 'Plano de execução do PO',
+    area('Plano em Markdown', 'markdown', p.plan?.markdown, 'required maxlength="12000"'));
+  if (type === 'sprint') {
+    const sprint = p.sprints?.find(item => item.id === id);
+    showModal(type, sprint ? 'Editar sprint' : 'Nova sprint',
+      textField('Nome', 'name', sprint?.name, 'required maxlength="80"') +
+      area('Objetivo', 'goal', sprint?.goal, 'maxlength="1500"') +
+      '<label>Status<select name="status">' + options(sprintStates, sprint?.status || 'planned') + '</select></label>' +
+      textField('Data inicial', 'start', sprint?.start, 'type="date"') +
+      textField('Data final', 'end', sprint?.end, 'type="date"'), { sprint: id });
+  }
+  if (type === 'assign') {
+    const task = p.tasks.find(item => item.id === id);
+    showModal(type, 'Sprint · ' + task.id, '<label>Sprint<select name="sprint">' +
+      options({ '': 'Sem sprint', ...sprintOptions }, task.sprint || '') + '</select></label>', { task: id });
+  }
+  if (type === 'cut') showModal(type, 'Registrar corte de release',
+    textField('Versão', 'version', '', 'required maxlength="24" placeholder="1.0.0"') +
+    '<label>Sprint<select name="sprint" required>' + options(sprintOptions, '') + '</select></label>' +
+    '<p class="muted">A sprint precisa ter todas as tarefas com merge validado. O corte registra os commits da develop para revisão.</p>');
   if (type === 'project') showModal(type, 'Novo projeto',
     textField('Nome', 'name', '', 'required maxlength="80"') + textField('Identificador', 'id', '', 'required maxlength="48" placeholder="meu-projeto"') +
     area('Contexto em Markdown', 'context', '', 'maxlength="12000"') + profileFields(defaultProfile));
@@ -338,7 +433,8 @@ function open(type, id) {
       textField('Título', 'title', '', 'required maxlength="120"') +
       '<label>Repositório<select name="repo">' + options(Object.fromEntries(p.repos.map(repo => [repo.slug, repo.slug])), '') + '</select></label>' +
       area('Escopo e critérios de aceite', 'description', '', 'maxlength="5000"') +
-      textField('Dependências (IDs separados por vírgula)', 'depends', '', 'placeholder="API-01, WEB-02"'));
+      textField('Dependências (IDs separados por vírgula)', 'depends', '', 'placeholder="API-01, WEB-02"') +
+      (p.sprints?.length ? '<label>Sprint<select name="sprint">' + options({ '': 'Sem sprint', ...sprintOptions }, '') + '</select></label>' : ''));
   }
   if (type === 'details') {
     const task = p.tasks.find(item => item.id === id);
@@ -353,6 +449,8 @@ function open(type, id) {
         esc(task.observation.mergeState || '—') + '</span></div>' : '') +
       (task.syncError ? '<p class="modal-error">' + esc(task.syncError) + '</p>' : '') +
       (task.observation?.url ? '<a href="' + esc(task.observation.url) + '" target="_blank" rel="noopener noreferrer">Abrir PR #' + task.pr + ' no GitHub ↗</a>' : '') +
+      (task.sprint ? '<small>Sprint · ' + esc(sprintOptions[task.sprint]) + '</small>' : '') +
+      (!isDemo() && p.sprints?.length ? btn('Definir sprint', 'assign', 'ghost', 'data-id="' + esc(task.id) + '"') : '') +
       (!isDemo() && !task.pr ? btn('Vincular PR', 'link', '', 'data-id="' + esc(task.id) + '"') : '');
     showModal(type, task.id + ' · ' + task.title, details);
   }
@@ -370,6 +468,12 @@ document.addEventListener('click', async event => {
     if (view === 'connections') await refreshMcpChecks();
     else render();
   } else if (action === 'close') $('#dialog').close();
+  else if (action === 'refresh-runs') {
+    try {
+      await load();
+      if (view === 'runs') render();
+    } catch (error) { toast(error.message); }
+  }
   else if (action === 'refresh-mcp-tests') await refreshMcpChecks();
   else if (action === 'test-cli') {
     cliPending.add(id);
@@ -424,8 +528,10 @@ document.addEventListener('click', async event => {
     try {
       await navigator.clipboard.writeText(
         'Use o MCP orquestradoria para trabalhar no projeto ' + current + '. Leia contexto e caixa_de_entrada. ' +
-        'Veja seu papel em projetos. Se for Dev ou QA, reserve uma tarefa disponível com reservar_tarefa e confirme ' +
-        'o perfil de modelo e esforço na sessão. Como Dev, trabalhe em feature/ ou bugfix/ a partir de develop e ' +
+        'Veja seu papel em projetos e consulte ler_planejamento. Como PO, use iniciar_planejamento, publique o plano com salvar_plano e organize as sprints. ' +
+        'Como Dev ou QA, reserve uma tarefa com reservar_tarefa e confirme o perfil de modelo e esforço. Atualize as referências ' +
+        'do clone antes de preparar_worktree. Registre a thread e o progresso com atualizar_execucao. ' +
+        'Como Dev, trabalhe em feature/ ou bugfix/ a partir de develop e ' +
         'vincule o PR com vincular_pr. Como QA, revise o SHA retornado e publique review formal ou veredito no PR ' +
         'com QA: APROVADO <sha> ou QA: CORRIGIR <sha> na primeira linha. Registre o resumo com enviar_mensagem. ' +
         'Se houver mensagem pendente do dono, responda no chat do projeto. O merge é humano.'
@@ -484,7 +590,10 @@ document.addEventListener('submit', async event => {
   try {
     if (formId === 'compose') await api('post', { ...values, project: current });
     else {
-      const actions = { project: 'create_project', config: 'settings', repo: 'add_repo', task: 'add_task', link: 'attach_pr', official: 'official_repo' };
+      const actions = {
+        project: 'create_project', config: 'settings', repo: 'add_repo', task: 'add_task', link: 'attach_pr', official: 'official_repo',
+        plan: 'save_plan', sprint: 'save_sprint', assign: 'assign_sprint', cut: 'cut_release'
+      };
       const args = { ...values, project: current };
       if (modal.type === 'project' || modal.type === 'config') args.profile = Object.fromEntries(Object.keys(roles).map(role => [
         role, Object.fromEntries(['agent', 'model', 'effort', 'login'].map(key => [key, values[role + '-' + key]]))
@@ -492,6 +601,8 @@ document.addEventListener('submit', async event => {
       if (modal.type === 'repo') { args.docs = split(values.docs); args.checks = split(values.checks); }
       if (modal.type === 'task') args.depends = split(values.depends);
       if (modal.type === 'link') args.task = modal.task;
+      if (modal.type === 'assign') args.task = modal.task;
+      if (modal.type === 'sprint') args.sprint = modal.sprint;
       const result = await api(actions[modal.type], args);
       if (modal.type === 'project') { current = result.id; view = 'pipeline'; search = ''; filter = ''; }
       if (['repo', 'official'].includes(modal.type)) contextAudit = null;
@@ -512,7 +623,7 @@ try {
 } catch (error) { toast(error.message); }
 render();
 setInterval(async () => {
-  if (isDemo() || syncBusy || $('#dialog').open || document.activeElement?.matches('input, select, textarea, button')) return;
+  if (isDemo() || syncBusy || $('#dialog').open || document.activeElement?.matches('input, select, textarea')) return;
   try {
     const visibleData = () => ['pipeline', 'settings'].includes(view) || (view === 'repos' && repoScope === 'all') ?
       workspace : project();
