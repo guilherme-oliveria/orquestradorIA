@@ -10,6 +10,7 @@ if (!Object.hasOwn(agents, agent)) {
 const string = { type: 'string' };
 const fields = { project: string, task: string, token: string };
 const tools = [
+  ['testar_conexao', 'test_connection', 'Confirma que esta sessão consegue chegar ao painel. Registra o horário do teste em Configurações.', {}, []],
   ['projetos', 'workspace', 'Lista projetos, tarefas, papéis e estado dos PRs.', {}, []],
   ['contexto', 'context', 'Lê o contexto compartilhado e os arquivos Markdown de todos os repositórios cadastrados, com SHA de origem.', { project: string, docs: { type: 'boolean' } }, ['project']],
   ['verificar_contexto', 'context_audit', 'Compara docs/CONTEXTO-PROJETO.md na develop de cada repositório com o arquivo oficial. Propague o arquivo por PR Gitflow.', { project: string }, ['project']],

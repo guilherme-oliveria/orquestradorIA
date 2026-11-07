@@ -76,6 +76,8 @@ claude mcp list
 
 Para testar, peça na sessão de cada agente “Use o MCP `orquestradoria` para listar os projetos”. Se a lista estiver vazia e o painel mostrar só o Atlas, cadastre um projeto real antes de repetir. O cadastro fica no Orquestrador. Você pode continuar usando suas sessões e pastas existentes no Claude e no Codex.
 
+Em **Configurações → Conexões**, use **Testar CLI** para verificar se o executável está acessível no ambiente do painel. Claude e Codex também mostram se o CLI encontrou um login local. Para validar o caminho MCP, use **Copiar teste MCP**, cole na sessão que quer testar e clique em **Atualizar testes MCP** no painel. O horário exibido é o do último teste bem-sucedido do agente. OpenCode aparece no diagnóstico de CLI.
+
 ### OpenCode
 
 No OpenCode, use `/connect` para autenticar o provedor e `/models` para escolher o modelo disponível. A documentação do cliente lista as opções de login, como assinatura elegível do ChatGPT quando oferecida, ou chave API do provedor. Para modelos Anthropic no OpenCode, siga o fluxo oficial com chave do Claude Console. OpenCode suporta servidores MCP locais, mas o Orquestrador ainda não tem identidade `opencode` para atribuir papéis, tarefas ou mensagens ao cliente. Ele pode ser usado de forma independente para trabalhar nos mesmos repositórios. [Provedores do OpenCode](https://opencode.ai/docs/providers/) · [MCP no OpenCode](https://opencode.ai/docs/mcp-servers/)

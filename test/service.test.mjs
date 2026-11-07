@@ -11,6 +11,19 @@ const profile = {
   qa: { agent: 'codex', model: 'modelo-qa', effort: 'xhigh', login: 'qa-user' }
 };
 
+test('records a successful MCP test for the session agent only', async t => {
+  const store = createStore(':memory:');
+  t.after(store.close);
+  const { action } = createService(store);
+  assert.deepEqual(await action('connections', {}), { mcp: {} });
+  await assert.rejects(action('test_connection', {}), /sessão do agente/);
+  await assert.rejects(action('test_cli', { provider: 'codex' }, 'claude'), /diagnóstico no painel/);
+  await assert.rejects(action('test_cli', { provider: 'custom-command' }), /CLI da lista/);
+  const result = await action('test_connection', {}, 'codex');
+  assert.equal(result.agent, 'codex');
+  assert.deepEqual(await action('connections', {}), { mcp: { codex: result.checkedAt } });
+});
+
 test('coordinates two repos, concurrent claims, chat and commit-specific QA', async t => {
   const store = createStore(':memory:');
   t.after(store.close);

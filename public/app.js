@@ -48,6 +48,11 @@ let timer;
 let search = '';
 let filter = '';
 let repoScope = 'current';
+const connectionProviders = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini CLI', opencode: 'OpenCode' };
+const cliResults = new Map();
+const cliPending = new Set();
+let mcpChecks = {};
+let loadingChecks = false;
 let syncBusy = false;
 let contextBusy = false;
 let contextAudit = null;
@@ -214,6 +219,49 @@ function settings(p) {
     '</div><p class="subtitle">O perfil acompanha a tarefa como preferência. Escolha o modelo e o nível disponíveis na sessão do Desktop. Cadastre o conector MCP seguindo o README do projeto.</p></section>';
 }
 
+function connections() {
+  const statuses = { ready: ['CLI acessível', 'teal'], missing: ['CLI fora do PATH', 'amber'], error: ['Falha ao executar o CLI', 'red'] };
+  const auth = {
+    'signed-in': 'Login local ativo', 'signed-out': 'Login necessário',
+    unknown: 'Não foi possível verificar o login', unsupported: 'Teste de CLI verifica a versão'
+  };
+  const cards = Object.entries(connectionProviders).map(([provider, label]) => {
+    const result = cliResults.get(provider);
+    const checkedAt = mcpChecks[provider];
+    const canTestMcp = provider !== 'opencode';
+    const mcp = !canTestMcp ? badge('Integração MCP pendente', '') :
+      checkedAt ? badge('MCP verificado', 'teal') + '<small>Último teste · ' + esc(time(checkedAt)) + '</small>' :
+        badge('MCP aguardando teste', '');
+    return '<article class="card connection-card"><h2>' + esc(label) + '</h2><div><h3>CLI</h3>' +
+      (result ? badge(...statuses[result.status]) : badge('CLI aguardando teste')) +
+      (result?.version ? '<small>Versão ' + esc(result.version) + '</small>' : '') +
+      (result?.auth ? '<small>' + auth[result.auth] + '</small>' : '') + '</div><div><h3>MCP</h3>' + mcp +
+      '</div><div class="actions">' +
+      btn(cliPending.has(provider) ? 'Testando…' : 'Testar CLI', 'test-cli', '', 'data-id="' + provider + '"' +
+        (cliPending.has(provider) ? ' disabled' : '')) +
+      (canTestMcp ? btn('Copiar teste MCP', 'copy-mcp-test', 'ghost') : '') + '</div></article>';
+  }).join('');
+  return '<section class="card connection-guide"><p class="muted">O teste de CLI verifica a instalação no ambiente do painel. ' +
+    'Para confirmar uma sessão Desktop ou CLI, copie o teste MCP, cole na sessão e depois atualize os resultados aqui. ' +
+    'Esses testes verificam a configuração sem enviar uma solicitação direta ao modelo pelo painel.</p>' +
+    btn(loadingChecks ? 'Atualizando…' : 'Atualizar testes MCP', 'refresh-mcp-tests', 'ghost', loadingChecks ? 'disabled' : '') +
+    '</section><div class="connection-grid">' + cards + '</div>';
+}
+
+async function refreshMcpChecks() {
+  if (loadingChecks) return;
+  loadingChecks = true;
+  render();
+  try {
+    mcpChecks = (await api('connections', {})).mcp;
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    loadingChecks = false;
+    if (view === 'connections') render();
+  }
+}
+
 function render() {
   const p = project();
   $('#projects').innerHTML = [...workspace, example].map(item =>
@@ -222,19 +270,23 @@ function render() {
   $('#nav').innerHTML = Object.entries(views).map(([key, [icon, label]]) =>
     '<button class="nav-item ' + (key === view ? 'active' : '') + '" data-action="navigate" data-id="' + key +
     '"><span class="nav-icon">' + icon + '</span><span>' + label + '</span></button>').join('');
-  $('#breadcrumb').textContent = 'Workspace / ' + p.name;
+  const showingConnections = view === 'connections';
+  $('#connections-nav').classList.toggle('active', showingConnections);
+  $('#breadcrumb').textContent = 'Workspace / ' + (showingConnections ? 'Configurações' : p.name);
+  $('#sync').hidden = showingConnections;
   $('#sync').disabled = isDemo() || syncBusy;
   const info = {
     pipeline: ['Fluxo de entrega', 'Do planejamento à validação, com Gitflow e merge humano.', '+ Nova tarefa', 'task'],
     chat: ['Chat do projeto', 'Decisões e handoffs entre pessoas e agentes.', '', ''],
     repos: ['Repositórios', 'Contexto de API, web e mobile, com referências por repositório.', '+ Repositório', 'repo'],
-    settings: ['Papéis e contexto', 'Defina quem planeja, implementa e revisa as próximas tarefas.', 'Editar configuração', 'config']
+    settings: ['Papéis e contexto', 'Defina quem planeja, implementa e revisa as próximas tarefas.', 'Editar configuração', 'config'],
+    connections: ['Conexões', 'Verifique seus CLIs e confirme o acesso dos agentes ao Orquestrador.', '', '']
   }[view];
-  const action = isDemo() ? btn('+ Criar meu projeto', 'project', 'primary') : info[3] ? btn(info[2], info[3], 'primary') : '';
-  const body = { pipeline, chat, repos, settings }[view](p);
-  $('#view').innerHTML = '<div class="heading"><div><p class="eyebrow">' + esc(p.name.toUpperCase()) +
+  const action = isDemo() && !showingConnections ? btn('+ Criar meu projeto', 'project', 'primary') : info[3] ? btn(info[2], info[3], 'primary') : '';
+  const body = { pipeline, chat, repos, settings, connections }[view](p);
+  $('#view').innerHTML = '<div class="heading"><div><p class="eyebrow">' + esc(showingConnections ? 'CONFIGURAÇÕES' : p.name.toUpperCase()) +
     '</p><h1>' + info[0] + '</h1><p class="subtitle">' + info[1] + '</p></div>' + action + '</div>' +
-    (isDemo() ? '<p class="notice">Projeto de demonstração · Os dados abaixo são ilustrativos.</p>' : '') + body;
+    (isDemo() && !showingConnections ? '<p class="notice">Projeto de demonstração · Os dados abaixo são ilustrativos.</p>' : '') + body;
   if ($('#messages')) $('#messages').scrollTop = $('#messages').scrollHeight;
 }
 
@@ -314,8 +366,28 @@ document.addEventListener('click', async event => {
   if (action === 'select') {
     current = id; view = 'pipeline'; filter = ''; search = ''; render();
   } else if (action === 'navigate' || action === 'settings') {
-    view = id || 'settings'; render();
+    view = id || 'settings';
+    if (view === 'connections') await refreshMcpChecks();
+    else render();
   } else if (action === 'close') $('#dialog').close();
+  else if (action === 'refresh-mcp-tests') await refreshMcpChecks();
+  else if (action === 'test-cli') {
+    cliPending.add(id);
+    render();
+    try {
+      cliResults.set(id, await api('test_cli', { provider: id }));
+    } catch (error) {
+      toast(error.message);
+    } finally {
+      cliPending.delete(id);
+      if (view === 'connections') render();
+    }
+  } else if (action === 'copy-mcp-test') {
+    try {
+      await navigator.clipboard.writeText('Use a ferramenta testar_conexao do MCP orquestradoria para confirmar a conexão com o painel.');
+      toast('Cole o teste na sessão do agente e volte para atualizar os resultados.');
+    } catch { toast('Na sessão do agente, peça para executar testar_conexao do MCP orquestradoria.'); }
+  }
   else if (action === 'audit') {
     const auditProject = current;
     contextBusy = true;
