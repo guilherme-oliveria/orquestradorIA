@@ -8,6 +8,10 @@ const stages = {
   tests: ['Aguardando testes', 'teal', 4], merge: ['Aguardando seu merge', 'teal', 6], merged: ['Merge validado', 'teal', 7],
   'merged-unverified': ['Merge sem validação', 'red', 6], closed: ['PR fechado', '', 2], error: ['Falha na sincronização', 'red', 2]
 };
+const historyStages = {
+  'github-open': ['Aberto no GitHub', 'lav'], 'github-draft': ['Rascunho no GitHub', 'lav'],
+  'github-merged': ['Merge no GitHub', 'teal'], 'github-closed': ['Fechado no GitHub', '']
+};
 const milestones = ['Fila', 'Dev', 'PR', 'Revisão', 'Testes', 'Aprovação', 'Merge'];
 const views = {
   pipeline: ['▦', 'Pipeline'], planning: ['◫', 'Planejamento'], runs: ['▶', 'Execuções'], usage: ['◉', 'Custos e limites'],
@@ -31,6 +35,9 @@ let modal;
 let timer;
 let search = '';
 let filter = '';
+const prHistories = new Map();
+const historyPageSize = 25;
+let historyRowsShown = historyPageSize;
 let repoScope = 'current';
 const connectionProviders = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini CLI', opencode: 'OpenCode' };
 const cliResults = new Map();
@@ -119,9 +126,53 @@ function agentsView(p) {
   }).join('');
 }
 
+const matchesSearch = (...values) => values.some(value => value.toLowerCase().includes(search.trim().toLowerCase()));
+
+async function loadPrHistory(id) {
+  if (prHistories.get(id)?.loading) return;
+  const loading = { ...prHistories.get(id), loading: true };
+  prHistories.set(id, loading);
+  let result;
+  try {
+    result = await api('pr_history', { project: id });
+  } catch (error) {
+    result = { ...loading, loading: false, error: error.message };
+  }
+  if (prHistories.get(id) !== loading) return;
+  prHistories.set(id, result);
+  if (view === 'pipeline' && current === id) render();
+}
+
+function historyRows(p) {
+  const state = prHistories.get(p.id);
+  const linked = new Set(p.tasks.filter(task => task.pr).map(task => task.repo + '#' + task.pr));
+  const repos = state?.history || [];
+  const prs = repos.flatMap(({ repo, prs }) => prs.filter(pr => !linked.has(repo + '#' + pr.number)).map(pr => ({
+    ...pr, repo, status: 'github-' + (pr.state === 'OPEN' && pr.isDraft ? 'draft' : pr.state.toLowerCase())
+  })));
+  const filtered = prs.filter(pr => (!filter || filter === pr.status) &&
+    matchesSearch('PR #' + pr.number, pr.title, pr.repo, pr.headRefName, pr.baseRefName))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const rows = filtered.slice(0, historyRowsShown).map(pr => {
+    const [label, tone] = historyStages[pr.status];
+    return '<tr><td><a href="https://github.com/' + esc(pr.repo) + '/pull/' + esc(pr.number) +
+      '" target="_blank" rel="noopener noreferrer" class="task-button"><span class="task-id">PR #' + esc(pr.number) +
+      '</span>' + esc(pr.title) + '</a><small>' + esc(pr.repo) + '</small></td><td><small>' + esc(pr.headRefName) +
+      ' → ' + esc(pr.baseRefName) + '</small><small>Atualizado em ' + esc(time(pr.updatedAt)) +
+      '</small></td><td>' + badge(label, tone) + '<small>Histórico do GitHub</small></td></tr>';
+  }).join('');
+  const errors = repos.filter(repo => repo.error).map(repo => esc(repo.repo) + ' · ' + esc(repo.error));
+  if (state?.error) errors.push(esc(state.error));
+  const limit = repos.some(repo => repo.prs.length === state.limit) ?
+    ' · até ' + state.limit + ' PRs recentes por repositório' : '';
+  const footer = state?.loading ? 'Consultando PRs no GitHub…' :
+    'Histórico do GitHub · ' + Math.min(historyRowsShown, filtered.length) + ' de ' + filtered.length + ' PRs encontrados' + limit;
+  return { rows, footer, errors, hasMore: filtered.length > historyRowsShown };
+}
+
 function rows(p) {
   return p.tasks.filter(task => (!filter || stageFor(task, p) === filter) &&
-    (!search || [task.id, task.title, task.repo].some(value => value.toLowerCase().includes(search.toLowerCase()))))
+    matchesSearch(task.id, task.title, task.repo, task.pr ? '#' + task.pr : ''))
     .map(task => {
       const [label, tone, index] = stages[stageFor(task, p)];
       const dots = milestones.map((name, i) => '<span class="rail-step ' +
@@ -135,6 +186,9 @@ function rows(p) {
 }
 
 function pipeline(p) {
+  if (p.repos.length && !prHistories.has(p.id)) void loadPrHistory(p.id);
+  const history = historyRows(p);
+  const tableRows = rows(p) + history.rows;
   const counts = [
     ['Tarefas no projeto', p.tasks.length, '▦'],
     ['Em revisão / testes', p.tasks.filter(task => ['review', 'tests'].includes(stageFor(task, p))).length, '◈'],
@@ -146,13 +200,17 @@ function pipeline(p) {
   return '<div class="stats">' + stats + '</div><section><div class="section-head"><h2>Agentes e papéis</h2>' +
     btn('Configurar papéis, modelos e esforço', 'config', 'ghost') +
     '</div><div class="agents">' + agentsView(p) + '</div></section>' +
-    '<section class="panel"><div class="toolbar"><h2>Pipeline de tarefas</h2><form id="filter"><input name="search" type="search" aria-label="Buscar tarefa" placeholder="Buscar tarefa…" value="' +
+    '<section class="panel"><div class="toolbar"><h2>Pipeline de tarefas</h2><form id="filter"><input name="search" type="search" aria-label="Buscar tarefa ou PR" placeholder="Buscar tarefa ou PR…" value="' +
     esc(search) + '"><select name="status" aria-label="Filtrar status">' +
-    options({ '': 'Todos os status', ...Object.fromEntries(Object.entries(stages).map(([key, stage]) => [key, stage[0]])) }, filter) +
+    options({ '': 'Todos os status', ...Object.fromEntries(Object.entries({ ...stages, ...historyStages }).map(([key, stage]) => [key, stage[0]])) }, filter) +
     '</select><button class="button" type="submit">Filtrar</button></form></div><div class="table-wrap"><table>' +
     '<thead><tr><th>Tarefa / repositório</th><th>Progresso</th><th>Status</th></tr></thead><tbody id="rows">' +
-    (rows(p) || '<tr><td colspan="3" class="empty">Nenhuma tarefa encontrada.</td></tr>') +
-    '</tbody></table></div><p class="legend">' + milestones.join(' → ') + '</p></section>';
+    (tableRows || '<tr><td colspan="3" class="empty">' +
+      (prHistories.get(p.id)?.loading ? 'Consultando PRs no GitHub…' : 'Nenhuma tarefa ou PR encontrado.') + '</td></tr>') +
+    '</tbody></table></div><div class="legend">' + milestones.join(' → ') +
+    (p.repos.length ? '<div>' + history.footer + ' ' +
+      (history.hasMore ? btn('Mostrar mais PRs', 'more-prs', 'ghost') : '') + '</div>' : '') +
+    history.errors.map(error => '<div>' + error + '</div>').join('') + '</div></section>';
 }
 
 function chat(p) {
@@ -328,6 +386,7 @@ const money = (micros, currency) => new Intl.NumberFormat('pt-BR', {
 function usage(p) {
   const quotaCards = ['claude', 'codex'].map(provider => {
     const snapshot = usageLimits[provider];
+    const estimate = snapshot?.sessionEstimate;
     const windows = Object.entries({ fiveHours: 'Janela de 5 horas', weekly: 'Janela semanal' }).map(([key, label]) => {
       const window = snapshot?.windows[key];
       if (!window) return '<div class="quota-window"><h3>' + label + '</h3><small>Janela sem leitura</small></div>';
@@ -340,9 +399,12 @@ function usage(p) {
     }).join('');
     return '<article class="card"><div class="section-head"><h2>' + esc(connectionProviders[provider]) + '</h2>' +
       btn('Informar limites', 'limits', 'ghost', 'data-id="' + provider + '"') + '</div>' +
-      (snapshot ? '<small>Origem · ' + esc(snapshot.source) + ' · Leitura ' + esc(time(snapshot.checkedAt)) + '</small>' : '') +
+      (snapshot?.checkedAt ? '<small>Origem · ' + esc(snapshot.source) + ' · Leitura ' + esc(time(snapshot.checkedAt)) + '</small>' : '') +
       windows + (provider === 'codex' ? btn(queryingCodex ? 'Consultando…' : 'Consultar Codex local', 'query-codex-limits', '',
-        queryingCodex ? 'disabled' : '') : '<small>Coleta opcional pelo Claude Code · consulte o manual.</small>') + '</article>';
+        queryingCodex ? 'disabled' : '') : '<div class="quota-window"><h3>Estimativa da sessão do Claude Code</h3>' +
+        (estimate ? '<strong>' + esc(money(estimate.micros, 'USD')) + '</strong><small>Leitura em ' + esc(time(estimate.checkedAt)) + '</small>' :
+          '<small>Aguardando leitura da statusline do Claude Code.</small>') +
+        '<small>Estimativa da última sessão recebida, separada dos custos por projeto.</small></div>') + '</article>';
   }).join('');
   const projects = costScope === 'all' ? workspace : [p];
   const entries = projects.flatMap(owner => (owner.costs || []).filter(entry => !entry.voidedAt).map(entry => ({
@@ -545,12 +607,15 @@ document.addEventListener('click', async event => {
   if (!button) return;
   const { action, id } = button.dataset;
   if (action === 'select') {
-    current = id; view = 'pipeline'; filter = ''; search = ''; render();
+    current = id; view = 'pipeline'; filter = ''; search = ''; historyRowsShown = historyPageSize; render();
   } else if (action === 'navigate' || action === 'settings') {
     view = id || 'settings';
     if (view === 'connections') await refreshMcpChecks();
     else if (view === 'usage') { render(); await refreshUsageLimits(); }
     else render();
+  } else if (action === 'more-prs') {
+    historyRowsShown += historyPageSize;
+    render();
   } else if (action === 'close') $('#dialog').close();
   else if (action === 'refresh-usage-limits') await refreshUsageLimits();
   else if (action === 'query-codex-limits') {
@@ -647,7 +712,8 @@ document.addEventListener('click', async event => {
     try {
       await api('refresh', {});
       await load();
-      toast('Consulta ao GitHub concluída. Confira o status em cada tarefa.');
+      if (view === 'pipeline' && project()?.repos.length) await loadPrHistory(current);
+      toast('Consulta ao GitHub concluída. Confira o pipeline.');
     } catch (error) { toast(error.message); }
     finally { syncBusy = false; render(); }
   } else open(action, id);
@@ -691,7 +757,7 @@ document.addEventListener('submit', async event => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(form));
   if (formId === 'filter') {
-    search = values.search; filter = values.status; render(); return;
+    search = values.search; filter = values.status; historyRowsShown = historyPageSize; render(); return;
   }
   const submit = form.querySelector('button[type=submit]');
   submit.disabled = true;
@@ -725,6 +791,7 @@ document.addEventListener('submit', async event => {
       }
       const result = await api(actions[modal.type], args);
       if (modal.type === 'project') { current = result.id; view = 'pipeline'; search = ''; filter = ''; }
+      if (modal.type === 'repo') prHistories.delete(args.project);
       if (['repo', 'official'].includes(modal.type)) contextAudit = null;
       $('#dialog').close();
       toast('Alteração salva.');

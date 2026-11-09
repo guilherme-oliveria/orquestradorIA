@@ -145,7 +145,7 @@ Agentes podem enviar o custo acumulado da execução com `registrar_custo`, ante
 
 As janelas de cota pertencem à conta usada pelo agente e são compartilhadas entre projetos. **Consultar Codex local** lê percentuais e resets pelo app-server do CLI autenticado. As janelas disponíveis dependem da conta. **Informar limites** permite registrar manualmente os percentuais e horários do Claude ou Codex. O painel conserva a origem e o horário de cada leitura e, quando o reset chega, pede uma nova leitura. [App-server do Codex](https://learn.chatgpt.com/docs/app-server) · [Limites do Claude](https://support.claude.com/en/articles/11647753-how-do-usage-and-length-limits-work)
 
-Para coletar as janelas do Claude Code, configure opcionalmente o arquivo `claude-usage.mjs` como comando de statusline, com o caminho absoluto do Node e do script na máquina da sessão. O coletor envia somente percentuais e horários ao painel local. Se já usa uma statusline, integre a chamada ao seu script existente. A configuração abaixo considera uma instalação em `C:/Projetos/Orquestrador`.
+Para coletar as janelas do Claude Code, configure opcionalmente o arquivo `claude-usage.mjs` como comando de statusline, com o caminho absoluto do Node e do script na máquina da sessão. O coletor envia ao painel local as janelas de uso e a estimativa da sessão em USD quando o Claude Code fornece esses dados. A estimativa aparece no cartão do Claude. Para contabilizá-la por projeto e papel, use um lançamento com atribuição à execução. Se já usa uma statusline, integre a chamada ao seu script existente. A configuração abaixo considera uma instalação em `C:/Projetos/Orquestrador`.
 
 ```json
 {
