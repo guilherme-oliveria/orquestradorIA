@@ -85,7 +85,6 @@ td:nth-child(2){width:36%}
 .rail-step:last-child{border-radius:2px;transform:rotate(45deg)}
 .legend{padding:12px 14px;color:var(--muted);font-size:11px;border-top:1px solid var(--line);line-height:1.6}
 .empty{padding:27px;text-align:center;color:var(--muted);line-height:1.6}
-.notice{padding:10px 13px;border:1px solid #3d3944;background:#221f2a;color:#dfcce8;border-radius:8px;margin-bottom:16px;line-height:1.5}
 .chat{padding:16px}
 .messages{min-height:180px;max-height:55vh;overflow:auto}
 .message{margin-bottom:12px;padding:11px 13px;border:1px solid var(--line);border-radius:9px;background:#101622}

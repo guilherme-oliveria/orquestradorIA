@@ -44,18 +44,20 @@ Encerre completamente e reabra o Claude Desktop. Confira se as ferramentas apare
 
 ### Chat e agendamentos
 
-O chat é uma caixa de entrada compartilhada. Mensagens podem ser endereçadas a um agente e vinculadas a uma tarefa. Use `caixa_de_entrada` e `enviar_mensagem` na sessão do agente. Em **Papéis e contexto**, copie as instruções e cole na sessão ou no agendamento existente de cada Desktop. O agendamento e a janela de execução ficam com o Desktop.
+Use os comentários do PR para evidências de teste, correções e vereditos. O chat do projeto é uma caixa de entrada de apoio para decisões e handoffs entre repositórios. Inclua os links dos PRs relacionados. Mensagens podem ser endereçadas a um agente e vinculadas a uma tarefa. Use `caixa_de_entrada` e `enviar_mensagem` na sessão do agente. Em **Papéis e contexto**, copie as instruções e cole na sessão ou no agendamento existente de cada Desktop. O agendamento e a janela de execução ficam com o Desktop.
 
 O modelo preferido é um nome de modelo digitado por papel. Em branco, vale o padrão da sessão. O nível de esforço também fica no perfil. O MCP entrega os dois ao agente quando ele reserva uma tarefa. Selecione os valores que a sua conta oferece no Desktop antes de executar. O perfil das tarefas já cadastradas é preservado quando você muda a configuração do projeto.
 
 ## Contexto versionado nos repositórios
 
-1. Em **Papéis e contexto → Contexto versionado**, escolha a fonte oficial. Pode ser a API ou um repositório dedicado às decisões e aos contratos do projeto.
-2. Publique `docs/CONTEXTO-PROJETO.md` na `develop` oficial por PR. Comece com **Baixar rascunho** se já escreveu o contexto no painel.
+1. Em **Papéis e contexto → Contexto versionado**, escolha o repositório oficial e o caminho do Markdown na branch `develop`. Você pode apontar para um contrato que já existe.
+2. Se ainda precisar criar um documento compartilhado, publique `docs/CONTEXTO-PROJETO.md` na `develop` oficial por PR. Use **Baixar resumo do projeto** para aproveitar o contexto cadastrado no painel.
 3. Use **Verificar cópias**. A comparação consulta o arquivo no commit observado da `develop` de cada repositório. A opção **Copiar instruções para os PRs** gera o handoff para o Dev atualizar as cópias ausentes ou divergentes por PR. Reaplique a checagem após os merges.
-4. Em cada repositório, referencie esse Markdown no `AGENTS.md` e no `CLAUDE.md` quando aplicável. O MCP entrega o contexto oficial com origem e SHA, junto às referências específicas dos repositórios.
+4. Em cada repositório, referencie esse Markdown no `AGENTS.md` e no `CLAUDE.md` quando aplicável. O MCP entrega o Markdown oficial com origem e SHA, o resumo do painel em `projectContext` e as referências específicas dos repositórios.
 
 Um repositório template do GitHub pode iniciar projetos novos com essa estrutura. Para repositórios existentes, publique o arquivo por PR e use a comparação do painel nas atualizações seguintes. [Templates no GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template)
+
+Para uma entrega que cruza repositórios, cadastre uma tarefa por repositório e vincule um PR a cada tarefa. Inclua links entre os PRs e registre dependências quando uma mudança precisar estar integrada antes da outra. O QA valida cada SHA e registra o resultado dos testes integrados nos PRs correspondentes.
 
 ## Rotina Gitflow
 
@@ -68,4 +70,4 @@ O servidor consulta os PRs vinculados a cada minuto. O botão de sincronização
 
 ## Verificação
 
-Rode `node --test` para verificar o fluxo Gitflow, CI, vereditos e dependências. O painel inclui um projeto de demonstração separado dos dados reais.
+Rode `node --test` para verificar o fluxo Gitflow, CI, vereditos e dependências.

@@ -13,8 +13,8 @@ const fields = { project: string, task: string, token: string };
 const tools = [
   ['testar_conexao', 'test_connection', 'Confirma que esta sessão consegue chegar ao painel. Registra o horário do teste em Configurações.', {}, []],
   ['projetos', 'workspace', 'Lista projetos, tarefas, papéis e estado dos PRs.', {}, []],
-  ['contexto', 'context', 'Lê o contexto compartilhado e os arquivos Markdown de todos os repositórios cadastrados, com SHA de origem.', { project: string, docs: { type: 'boolean' } }, ['project']],
-  ['verificar_contexto', 'context_audit', 'Compara docs/CONTEXTO-PROJETO.md na develop de cada repositório com o arquivo oficial. Propague o arquivo por PR Gitflow.', { project: string }, ['project']],
+  ['contexto', 'context', 'Lê o Markdown oficial e o contexto do painel (projectContext), além das referências de cada repositório com SHA de origem.', { project: string, docs: { type: 'boolean' } }, ['project']],
+  ['verificar_contexto', 'context_audit', 'Compara o Markdown configurado na develop de cada repositório com o arquivo oficial. Propague o arquivo por PR Gitflow.', { project: string }, ['project']],
   ['caixa_de_entrada', 'inbox', 'Lê as mensagens recentes do chat endereçadas a este agente e as conversas gerais.', { project: string }, ['project']],
   ['enviar_mensagem', 'post', 'Registra uma mensagem no chat do projeto. Destinatários: user, all, claude, codex, gemini.', { project: string, task: string, to: string, text: string }, ['project', 'text']],
   ['ler_planejamento', 'planning', 'Lê o plano do PO, sprints e cortes de release do projeto.', { project: string }, ['project']],

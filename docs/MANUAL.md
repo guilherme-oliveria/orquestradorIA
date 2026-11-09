@@ -7,7 +7,7 @@ O Orquestrador reúne projetos, contexto, mensagens, tarefas e status dos PRs. C
 | Componente | Quando precisa dele |
 | --- | --- |
 | **Node.js 24 ou superior** | Obrigatório no ambiente que executa o painel. Use também um executável Node acessível ao cliente que inicia o MCP. O painel usa SQLite embutido e funciona sem instalar pacotes npm. |
-| **GitHub e GitHub CLI (`gh`)** | Para consultar PRs, checks e Markdown versionado. Instale e autentique o `gh` no ambiente onde o painel roda. O modo de demonstração pode ser explorado sem acesso ao GitHub. |
+| **GitHub e GitHub CLI (`gh`)** | Para consultar PRs, checks e Markdown versionado. Instale e autentique o `gh` no ambiente onde o painel roda. |
 | **Git** | Nos ambientes onde Dev e QA vão baixar o código, trocar de branch e trabalhar nos PRs. |
 | **Claude Desktop ou Claude Code CLI** | Escolha um cliente com sessão local para o agente Claude. |
 | **Codex Desktop ou Codex CLI** | Escolha um cliente com sessão local para o agente Codex. Pode combinar Desktop de um provedor com CLI do outro. |
@@ -19,7 +19,7 @@ Para começar no Windows, use Node 24, Git, `gh`, Claude Desktop e Codex Desktop
 
 ## 2. Inicie o painel e confira o GitHub
 
-No Windows, abra `Iniciar-painel.cmd` na pasta do Orquestrador ou rode `node server.mjs` nessa pasta. No WSL, use `node server.mjs`. Abra [127.0.0.1:47621](http://127.0.0.1:47621/). O Projeto Atlas usa dados de demonstração.
+No Windows, abra `Iniciar-painel.cmd` na pasta do Orquestrador ou rode `node server.mjs` nessa pasta. No WSL, use `node server.mjs`. Abra [127.0.0.1:47621](http://127.0.0.1:47621/).
 
 Use os comandos abaixo no terminal do **mesmo ambiente do painel**.
 
@@ -74,7 +74,7 @@ claude mcp add --scope user --transport stdio orquestradoria -- node "$PWD/mcp.m
 claude mcp list
 ```
 
-Para testar, peça na sessão de cada agente “Use o MCP `orquestradoria` para listar os projetos”. Se a lista estiver vazia e o painel mostrar só o Atlas, cadastre um projeto real antes de repetir. O cadastro fica no Orquestrador. Você pode continuar usando suas sessões e pastas existentes no Claude e no Codex.
+Para testar, peça na sessão de cada agente “Use o MCP `orquestradoria` para listar os projetos”. Se a lista estiver vazia, cadastre um projeto no painel e repita o teste. O cadastro fica no Orquestrador. Você pode continuar usando suas sessões e pastas existentes no Claude e no Codex.
 
 Em **Configurações → Conexões**, use **Testar CLI** para verificar se o executável está acessível no ambiente do painel. Claude e Codex também mostram se o CLI encontrou um login local. Para validar o caminho MCP, use **Copiar teste MCP**, cole na sessão que quer testar e clique em **Atualizar testes MCP** no painel. O horário exibido é o do último teste bem-sucedido do agente. OpenCode aparece no diagnóstico de CLI.
 
@@ -102,7 +102,7 @@ Créditos adquiridos dentro de um plano e saldo de uma plataforma de API são se
 
 1. Clique em **Criar meu projeto**. Defina o identificador e escolha PO, Dev e QA. Informe o login GitHub que vai publicar os vereditos do QA.
 2. Em **Repositórios**, adicione os repos no formato `dono/repositorio`. Se houver CI obrigatório, copie os nomes exatos dos checks do GitHub. Deixar o campo vazio faz o painel exigir ao menos um check e considerar todos os checks publicados.
-3. Em **Papéis e contexto**, escolha um repositório oficial para `docs/CONTEXTO-PROJETO.md`. Versione esse arquivo pela `develop` de cada repo via PR. **Verificar cópias** mostra o que está atualizado, divergente ou ausente. Documentos específicos de cada repo podem ser cadastrados separadamente.
+3. Em **Papéis e contexto**, escolha o repositório oficial e o caminho do Markdown compartilhado. Você pode reutilizar um contrato existente. Para um documento novo, use `docs/CONTEXTO-PROJETO.md` e publique as cópias por PR para a `develop` de cada repo. **Verificar cópias** mostra o que está atualizado, divergente ou ausente. Documentos específicos de cada repo podem ser cadastrados separadamente.
 4. Crie as tarefas que quer acompanhar. Declare dependências pelos IDs das tarefas cadastradas. Para um PR já em andamento, abra a tarefa, use **Vincular PR** e informe o número. O painel valida o repo, a branch de origem `feature/` ou `bugfix/` e o destino `develop`.
 5. Clique em **Sincronizar GitHub**. A partir daí, o painel consulta os PRs vinculados periodicamente. Nesta versão, cadastros, importação de PRs e escolhas de papel são feitos por projeto.
 
