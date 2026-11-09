@@ -8,6 +8,10 @@ const stages = {
   tests: ['Aguardando testes', 'teal', 4], merge: ['Aguardando seu merge', 'teal', 6], merged: ['Merge validado', 'teal', 7],
   'merged-unverified': ['Merge sem validação', 'red', 6], closed: ['PR fechado', '', 2], error: ['Falha na sincronização', 'red', 2]
 };
+const historyStages = {
+  'github-open': ['Aberto no GitHub', 'lav'], 'github-draft': ['Rascunho no GitHub', 'lav'],
+  'github-merged': ['Merge no GitHub', 'teal'], 'github-closed': ['Fechado no GitHub', '']
+};
 const milestones = ['Fila', 'Dev', 'PR', 'Revisão', 'Testes', 'Aprovação', 'Merge'];
 const views = {
   pipeline: ['▦', 'Pipeline'], planning: ['◫', 'Planejamento'], runs: ['▶', 'Execuções'], usage: ['◉', 'Custos e limites'],
@@ -23,38 +27,17 @@ const defaultProfile = {
   dev: { agent: 'claude', model: '', effort: 'default', login: '' },
   qa: { agent: 'codex', model: '', effort: 'high', login: '' }
 };
-const exampleRepos = [
-  { slug: 'exemplo/atlas-api', kind: 'Backend', docs: ['docs/arquitetura/integracao.md'], checks: ['api-tests'] },
-  { slug: 'exemplo/atlas-web', kind: 'Frontend', docs: ['docs/arquitetura/design.md'], checks: ['web-tests'] },
-  { slug: 'exemplo/atlas-mobile', kind: 'Mobile', docs: ['docs/arquitetura/sincronizacao.md'], checks: ['mobile-tests'] }
-];
-const example = {
-  id: 'demo', name: 'Projeto Atlas', profile: defaultProfile, repos: exampleRepos,
-  context: '# Atlas\n\nBack, web e mobile compartilham o contrato versionado em docs/arquitetura/integracao.md.',
-  messages: [
-    { author: 'user', to: 'all', text: 'O contrato de autenticação da API é a referência para web e mobile.' },
-    { author: 'claude', to: 'codex', task: 'API-04', text: 'PR pronto para revisão. Os testes cobrem renovação e expiração do token.' }
-  ],
-  tasks: [
-    ['API-04', 'Validar renovação do token de acesso', 0, 'tests', [], 14],
-    ['WEB-07', 'Integrar tela de login com a API', 1, 'merge', [], 21],
-    ['MOB-05', 'Persistir a sessão no dispositivo', 2, 'review', [], 9],
-    ['MOB-06', 'Sincronizar perfil com o backend', 2, 'queue', ['API-04'], null],
-    ['WEB-06', 'Publicar componentes de autenticação', 1, 'merged', [], 18],
-    ['API-03', 'Padronizar erros de autenticação', 0, 'changes', [], 11]
-  ].map(([id, title, repo, stage, depends, pr]) => ({
-    id, title, repo: exampleRepos[repo].slug, depends, pr, observation: { stage },
-    profile: defaultProfile, description: 'Tarefa ilustrativa para mostrar a ligação entre repositórios e etapas.'
-  }))
-};
 
 let workspace = [];
-let current = 'demo';
+let current;
 let view = 'pipeline';
 let modal;
 let timer;
 let search = '';
 let filter = '';
+const prHistories = new Map();
+const historyPageSize = 25;
+let historyRowsShown = historyPageSize;
 let repoScope = 'current';
 const connectionProviders = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini CLI', opencode: 'OpenCode' };
 const cliResults = new Map();
@@ -69,7 +52,7 @@ let syncBusy = false;
 let contextBusy = false;
 let contextAudit = null;
 
-const project = () => workspace.find(item => item.id === current) || example;
+const project = () => workspace.find(item => item.id === current);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const options = (values, selected) => Object.entries(values).map(([value, label]) =>
   '<option value="' + esc(value) + '"' + (selected === value ? ' selected' : '') + '>' + esc(label) + '</option>').join('');
@@ -77,8 +60,8 @@ const btn = (label, action, style = '', attrs = '') =>
   '<button type="button" class="button ' + style + '" data-action="' + action + '" ' + attrs + '>' + label + '</button>';
 const badge = (value, tone = '') => '<span class="badge ' + tone + '">' + esc(value) + '</span>';
 const split = value => String(value || '').split(/[\n,]+/).map(item => item.trim()).filter(Boolean);
-const time = value => value ? new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'Exemplo';
-const isDemo = () => project().id === 'demo';
+const time = value => value ? new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : 'Data indisponível';
+const defaultContextPath = 'docs/CONTEXTO-PROJETO.md';
 
 async function api(action, args) {
   const response = await fetch('/api/action', {
@@ -94,6 +77,7 @@ async function load() {
   const response = await fetch('/api/workspace');
   if (!response.ok) throw new Error('Não foi possível carregar o workspace.');
   workspace = (await response.json()).projects;
+  if (!project()) current = workspace[0]?.id;
 }
 
 function toast(message) {
@@ -114,8 +98,7 @@ function stageFor(task, p) {
 
 function agentsView(p) {
   const activeByAgent = new Map();
-  const projects = p.id === 'demo' ? [p] : workspace;
-  for (const owner of projects) {
+  for (const owner of workspace) {
     for (const run of owner.runs || []) {
       if (run.role !== 'po' || run.status !== 'active' || run.expires <= Date.now()) continue;
       const reservations = activeByAgent.get(run.agent) || [];
@@ -143,9 +126,53 @@ function agentsView(p) {
   }).join('');
 }
 
+const matchesSearch = (...values) => values.some(value => value.toLowerCase().includes(search.trim().toLowerCase()));
+
+async function loadPrHistory(id) {
+  if (prHistories.get(id)?.loading) return;
+  const loading = { ...prHistories.get(id), loading: true };
+  prHistories.set(id, loading);
+  let result;
+  try {
+    result = await api('pr_history', { project: id });
+  } catch (error) {
+    result = { ...loading, loading: false, error: error.message };
+  }
+  if (prHistories.get(id) !== loading) return;
+  prHistories.set(id, result);
+  if (view === 'pipeline' && current === id) render();
+}
+
+function historyRows(p) {
+  const state = prHistories.get(p.id);
+  const linked = new Set(p.tasks.filter(task => task.pr).map(task => task.repo + '#' + task.pr));
+  const repos = state?.history || [];
+  const prs = repos.flatMap(({ repo, prs }) => prs.filter(pr => !linked.has(repo + '#' + pr.number)).map(pr => ({
+    ...pr, repo, status: 'github-' + (pr.state === 'OPEN' && pr.isDraft ? 'draft' : pr.state.toLowerCase())
+  })));
+  const filtered = prs.filter(pr => (!filter || filter === pr.status) &&
+    matchesSearch('PR #' + pr.number, pr.title, pr.repo, pr.headRefName, pr.baseRefName))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const rows = filtered.slice(0, historyRowsShown).map(pr => {
+    const [label, tone] = historyStages[pr.status];
+    return '<tr><td><a href="https://github.com/' + esc(pr.repo) + '/pull/' + esc(pr.number) +
+      '" target="_blank" rel="noopener noreferrer" class="task-button"><span class="task-id">PR #' + esc(pr.number) +
+      '</span>' + esc(pr.title) + '</a><small>' + esc(pr.repo) + '</small></td><td><small>' + esc(pr.headRefName) +
+      ' → ' + esc(pr.baseRefName) + '</small><small>Atualizado em ' + esc(time(pr.updatedAt)) +
+      '</small></td><td>' + badge(label, tone) + '<small>Histórico do GitHub</small></td></tr>';
+  }).join('');
+  const errors = repos.filter(repo => repo.error).map(repo => esc(repo.repo) + ' · ' + esc(repo.error));
+  if (state?.error) errors.push(esc(state.error));
+  const limit = repos.some(repo => repo.prs.length === state.limit) ?
+    ' · até ' + state.limit + ' PRs recentes por repositório' : '';
+  const footer = state?.loading ? 'Consultando PRs no GitHub…' :
+    'Histórico do GitHub · ' + Math.min(historyRowsShown, filtered.length) + ' de ' + filtered.length + ' PRs encontrados' + limit;
+  return { rows, footer, errors, hasMore: filtered.length > historyRowsShown };
+}
+
 function rows(p) {
   return p.tasks.filter(task => (!filter || stageFor(task, p) === filter) &&
-    (!search || [task.id, task.title, task.repo].some(value => value.toLowerCase().includes(search.toLowerCase()))))
+    matchesSearch(task.id, task.title, task.repo, task.pr ? '#' + task.pr : ''))
     .map(task => {
       const [label, tone, index] = stages[stageFor(task, p)];
       const dots = milestones.map((name, i) => '<span class="rail-step ' +
@@ -159,6 +186,9 @@ function rows(p) {
 }
 
 function pipeline(p) {
+  if (p.repos.length && !prHistories.has(p.id)) void loadPrHistory(p.id);
+  const history = historyRows(p);
+  const tableRows = rows(p) + history.rows;
   const counts = [
     ['Tarefas no projeto', p.tasks.length, '▦'],
     ['Em revisão / testes', p.tasks.filter(task => ['review', 'tests'].includes(stageFor(task, p))).length, '◈'],
@@ -168,15 +198,19 @@ function pipeline(p) {
   const stats = counts.map(([label, number, icon]) => '<article class="card"><div class="stat-label">' + label +
     '<span class="stat-icon">' + icon + '</span></div><span class="stat-value">' + number + '</span></article>').join('');
   return '<div class="stats">' + stats + '</div><section><div class="section-head"><h2>Agentes e papéis</h2>' +
-    btn('Configurar papéis, modelos e esforço', isDemo() ? 'settings' : 'config', 'ghost') +
+    btn('Configurar papéis, modelos e esforço', 'config', 'ghost') +
     '</div><div class="agents">' + agentsView(p) + '</div></section>' +
-    '<section class="panel"><div class="toolbar"><h2>Pipeline de tarefas</h2><form id="filter"><input name="search" type="search" aria-label="Buscar tarefa" placeholder="Buscar tarefa…" value="' +
+    '<section class="panel"><div class="toolbar"><h2>Pipeline de tarefas</h2><form id="filter"><input name="search" type="search" aria-label="Buscar tarefa ou PR" placeholder="Buscar tarefa ou PR…" value="' +
     esc(search) + '"><select name="status" aria-label="Filtrar status">' +
-    options({ '': 'Todos os status', ...Object.fromEntries(Object.entries(stages).map(([key, stage]) => [key, stage[0]])) }, filter) +
+    options({ '': 'Todos os status', ...Object.fromEntries(Object.entries({ ...stages, ...historyStages }).map(([key, stage]) => [key, stage[0]])) }, filter) +
     '</select><button class="button" type="submit">Filtrar</button></form></div><div class="table-wrap"><table>' +
     '<thead><tr><th>Tarefa / repositório</th><th>Progresso</th><th>Status</th></tr></thead><tbody id="rows">' +
-    (rows(p) || '<tr><td colspan="3" class="empty">Nenhuma tarefa encontrada.</td></tr>') +
-    '</tbody></table></div><p class="legend">' + milestones.join(' → ') + '</p></section>';
+    (tableRows || '<tr><td colspan="3" class="empty">' +
+      (prHistories.get(p.id)?.loading ? 'Consultando PRs no GitHub…' : 'Nenhuma tarefa ou PR encontrado.') + '</td></tr>') +
+    '</tbody></table></div><div class="legend">' + milestones.join(' → ') +
+    (p.repos.length ? '<div>' + history.footer + ' ' +
+      (history.hasMore ? btn('Mostrar mais PRs', 'more-prs', 'ghost') : '') + '</div>' : '') +
+    history.errors.map(error => '<div>' + error + '</div>').join('') + '</div></section>';
 }
 
 function chat(p) {
@@ -185,16 +219,16 @@ function chat(p) {
     (message.task ? badge(message.task, 'lav') : '') + '<small>' + time(message.at) + '</small><p>' +
     esc(message.text) + '</p></article>').join('');
   return '<section class="panel chat"><div class="section-head"><h2>Conversa compartilhada</h2>' +
-    badge('Caixa de entrada MCP', 'teal') + '</div><p class="muted">Os agentes leem e respondem quando a sessão ou o agendamento no Desktop consulta o projeto.</p>' +
+    badge('Caixa de entrada MCP', 'teal') + '</div><p class="muted">Use os comentários dos PRs para revisão e testes. Use este chat para coordenar repositórios ou fazer handoff com links dos PRs. Os agentes consultam o chat pelo MCP na sessão ou no agendamento.</p>' +
     '<div class="messages" id="messages">' + (messages || '<p class="empty">As mensagens do projeto aparecem aqui.</p>') + '</div>' +
-    (isDemo() ? '' : '<form class="compose" id="compose"><textarea name="text" aria-label="Mensagem" required maxlength="5000" placeholder="Escreva uma decisão, orientação ou pergunta…"></textarea><div class="actions"><select name="task" aria-label="Tarefa">' +
+    '<form class="compose" id="compose"><textarea name="text" aria-label="Mensagem" required maxlength="5000" placeholder="Escreva uma decisão, orientação ou pergunta…"></textarea><div class="actions"><select name="task" aria-label="Tarefa">' +
       options({ '': 'Sem tarefa', ...Object.fromEntries(p.tasks.map(task => [task.id, task.id])) }, '') +
       '</select><select name="to" aria-label="Destinatário">' + options({ all: 'Todos', claude: names.claude, codex: names.codex, gemini: names.gemini }, 'all') +
-      '</select><button class="button primary" type="submit">Enviar mensagem</button></div></form>') + '</section>';
+      '</select><button class="button primary" type="submit">Enviar mensagem</button></div></form></section>';
 }
 
 function repos(p) {
-  const showAll = p.id !== 'demo' && repoScope === 'all';
+  const showAll = repoScope === 'all';
   const projects = showAll ? workspace : [p];
   const cards = projects.flatMap(owner => owner.repos.map(repo =>
     '<article class="card"><div class="repo-tags">' + badge(repo.kind, 'lav') +
@@ -202,11 +236,10 @@ function repos(p) {
     '<div class="repo-list"><strong>' + esc(repo.slug) + '</strong><span>Base Gitflow · develop</span>' +
     '<span>CI · ' + esc(repo.checks.join(', ') || 'Todos os checks publicados') + '</span>' +
     repo.docs.map(path => '<code>' + esc(path) + '</code>').join('') +
-    (owner.id === 'demo' ? '' : '<a href="https://github.com/' + esc(repo.slug) +
-      '" target="_blank" rel="noopener noreferrer">Abrir no GitHub ↗</a>') + '</div></article>'
+    '<a href="https://github.com/' + esc(repo.slug) +
+      '" target="_blank" rel="noopener noreferrer">Abrir no GitHub ↗</a></div></article>'
   ));
-  const scope = p.id === 'demo' ? '' :
-    '<label class="repo-scope">Exibir repositórios<select id="repo-scope">' +
+  const scope = '<label class="repo-scope">Exibir repositórios<select id="repo-scope">' +
     options({ current: 'Projeto atual', all: 'Todos os projetos' }, repoScope) + '</select></label>';
   const empty = showAll ? 'Nenhum repositório cadastrado nos projetos.' :
     'Cadastre o primeiro repositório do projeto e indique os Markdown de referência.';
@@ -223,17 +256,17 @@ function settings(p) {
   const copies = audit?.copies.map(copy => '<div class="copy-row"><span>' + esc(copy.repo) +
     (copy.status === 'error' ? '<small>' + esc(copy.error) + '</small>' : '') +
     '</span>' + badge(...statuses[copy.status]) + '</div>').join('') || '';
-  const gitContext = isDemo() ? '' : '<section class="card compose"><div class="section-head"><h2>Contexto versionado</h2>' +
-    btn('Definir fonte', 'official', 'ghost') + '</div><p class="subtitle"><code>docs/CONTEXTO-PROJETO.md</code> na <code>develop</code> de cada repositório.</p>' +
+  const gitContext = '<section class="card compose"><div class="section-head"><h2>Contexto versionado</h2>' +
+    btn('Definir fonte', 'official', 'ghost') + '</div><p class="subtitle"><code>' + esc(p.officialPath || defaultContextPath) + '</code> na <code>develop</code> de cada repositório.</p>' +
     '<p class="subtitle">Fonte oficial · ' + esc(p.officialRepo || 'A definir') + '</p><div class="repo-list">' + copies + '</div><div class="actions context-actions">' +
-    btn('Baixar rascunho', 'download-draft', 'ghost', p.context ? '' : 'disabled') +
+    btn('Baixar resumo do projeto', 'download-draft', 'ghost', p.context ? '' : 'disabled') +
     btn(contextBusy ? 'Consultando…' : 'Verificar cópias', 'audit', '', !p.officialRepo || contextBusy ? 'disabled' : '') +
     (audit?.official ? btn('Baixar versão oficial', 'download-official') + btn('Copiar instruções para os PRs', 'propagate', 'primary') : '') +
     '</div></section>';
   return '<div class="agents">' + agentsView(p) + '</div><section class="card"><h2>Contexto compartilhado</h2><div class="pre muted">' +
     esc(p.context || 'Adicione objetivo, arquitetura, decisões e links do projeto.') +
     '</div></section>' + gitContext + '<section class="card compose"><div class="section-head"><h2>Configuração do Desktop</h2>' +
-    (isDemo() ? '' : btn('Copiar instruções da sessão', 'copy')) +
+    btn('Copiar instruções da sessão', 'copy') +
     '</div><p class="subtitle">O perfil acompanha a tarefa como preferência. Escolha o modelo e o nível disponíveis na sessão do Desktop. Cadastre o conector MCP seguindo o README do projeto.</p></section>';
 }
 
@@ -282,7 +315,7 @@ async function refreshMcpChecks() {
 
 function planning(p) {
   const plan = p.plan;
-  const editPlan = isDemo() ? '' : btn(plan ? 'Editar plano' : 'Criar plano', 'plan', 'ghost');
+  const editPlan = btn(plan ? 'Editar plano' : 'Criar plano', 'plan', 'ghost');
   const planCard = '<section class="card"><div class="section-head"><h2>Plano de execução do PO</h2>' + editPlan +
     '</div>' + (plan ? '<small>Atualizado por ' + esc(names[plan.author]) + ' · ' + esc(time(plan.updatedAt)) +
     '</small><div class="pre">' + esc(plan.markdown) + '</div>' : '<p class="muted">O plano em Markdown aparece aqui quando o PO ou o dono do projeto o publicar.</p>') +
@@ -306,10 +339,10 @@ function planning(p) {
     '</div></details>'
   ).join('');
   return '<div class="project-sections">' + planCard + '<section><div class="section-head"><h2>Sprints</h2>' +
-    (isDemo() ? '' : btn('Nova sprint', 'sprint', 'ghost')) + '</div>' +
+    btn('Nova sprint', 'sprint', 'ghost') + '</div>' +
     (sprintCards ? '<div class="repos">' + sprintCards + '</div>' : '<p class="panel empty">Nenhuma sprint cadastrada.</p>') +
     '</section><section><div class="section-head"><h2>Cortes de release</h2>' +
-    (isDemo() ? '' : btn('Registrar corte', 'cut', 'ghost', p.sprints?.length ? '' : 'disabled')) + '</div>' +
+    btn('Registrar corte', 'cut', 'ghost', p.sprints?.length ? '' : 'disabled') + '</div>' +
     (cuts || '<p class="panel empty">O corte guarda os commits da develop quando todas as tarefas da sprint têm merge validado.</p>') +
     '</section></div>';
 }
@@ -334,7 +367,7 @@ function runs(p) {
           esc(event.message) + '</p></div>').join('') + '</details>' : '') + '</article>';
   }).join('');
   return '<div class="section-head"><p class="muted">Cada reserva tem seu próprio histórico. As atualizações chegam pelo MCP.</p>' +
-    (isDemo() ? '' : btn('Atualizar execuções', 'refresh-runs', 'ghost')) + '</div><div class="project-sections">' +
+    btn('Atualizar execuções', 'refresh-runs', 'ghost') + '</div><div class="project-sections">' +
     (cards || '<section class="panel empty">As execuções aparecem quando o PO inicia o planejamento ou quando Dev e QA reservam tarefas.</section>') + '</div>';
 }
 
@@ -353,6 +386,7 @@ const money = (micros, currency) => new Intl.NumberFormat('pt-BR', {
 function usage(p) {
   const quotaCards = ['claude', 'codex'].map(provider => {
     const snapshot = usageLimits[provider];
+    const estimate = snapshot?.sessionEstimate;
     const windows = Object.entries({ fiveHours: 'Janela de 5 horas', weekly: 'Janela semanal' }).map(([key, label]) => {
       const window = snapshot?.windows[key];
       if (!window) return '<div class="quota-window"><h3>' + label + '</h3><small>Janela sem leitura</small></div>';
@@ -365,11 +399,14 @@ function usage(p) {
     }).join('');
     return '<article class="card"><div class="section-head"><h2>' + esc(connectionProviders[provider]) + '</h2>' +
       btn('Informar limites', 'limits', 'ghost', 'data-id="' + provider + '"') + '</div>' +
-      (snapshot ? '<small>Origem · ' + esc(snapshot.source) + ' · Leitura ' + esc(time(snapshot.checkedAt)) + '</small>' : '') +
+      (snapshot?.checkedAt ? '<small>Origem · ' + esc(snapshot.source) + ' · Leitura ' + esc(time(snapshot.checkedAt)) + '</small>' : '') +
       windows + (provider === 'codex' ? btn(queryingCodex ? 'Consultando…' : 'Consultar Codex local', 'query-codex-limits', '',
-        queryingCodex ? 'disabled' : '') : '<small>Coleta opcional pelo Claude Code · consulte o manual.</small>') + '</article>';
+        queryingCodex ? 'disabled' : '') : '<div class="quota-window"><h3>Estimativa da sessão do Claude Code</h3>' +
+        (estimate ? '<strong>' + esc(money(estimate.micros, 'USD')) + '</strong><small>Leitura em ' + esc(time(estimate.checkedAt)) + '</small>' :
+          '<small>Aguardando leitura da statusline do Claude Code.</small>') +
+        '<small>Estimativa da última sessão recebida, separada dos custos por projeto.</small></div>') + '</article>';
   }).join('');
-  const projects = costScope === 'all' || isDemo() ? workspace : [p];
+  const projects = costScope === 'all' ? workspace : [p];
   const entries = projects.flatMap(owner => (owner.costs || []).filter(entry => !entry.voidedAt).map(entry => ({
     ...entry, project: owner.id, projectName: owner.name
   })));
@@ -415,17 +452,23 @@ async function refreshUsageLimits() {
 
 function render() {
   const p = project();
-  $('#projects').innerHTML = [...workspace, example].map(item =>
-    '<button class="nav-item ' + (item.id === p.id ? 'active' : '') + '" data-action="select" data-id="' + esc(item.id) +
-    '"><span class="nav-icon">◈</span><span>' + esc(item.name) + (item.id === 'demo' ? ' · demo' : '') + '</span></button>').join('');
-  $('#nav').innerHTML = Object.entries(views).map(([key, [icon, label]]) =>
+  $('#projects').innerHTML = workspace.map(item =>
+    '<button class="nav-item ' + (item.id === current ? 'active' : '') + '" data-action="select" data-id="' + esc(item.id) +
+    '"><span class="nav-icon">◈</span><span>' + esc(item.name) + '</span></button>').join('');
+  $('#nav').innerHTML = p ? Object.entries(views).map(([key, [icon, label]]) =>
     '<button class="nav-item ' + (key === view ? 'active' : '') + '" data-action="navigate" data-id="' + key +
-    '"><span class="nav-icon">' + icon + '</span><span>' + label + '</span></button>').join('');
+    '"><span class="nav-icon">' + icon + '</span><span>' + label + '</span></button>').join('') : '';
   const showingConnections = view === 'connections';
   $('#connections-nav').classList.toggle('active', showingConnections);
-  $('#breadcrumb').textContent = 'Workspace / ' + (showingConnections ? 'Configurações' : p.name);
-  $('#sync').hidden = showingConnections;
-  $('#sync').disabled = isDemo() || syncBusy;
+  $('#breadcrumb').textContent = 'Workspace' + (showingConnections ? ' / Configurações' : p ? ' / ' + p.name : '');
+  $('#sync').hidden = showingConnections || !p;
+  $('#sync').disabled = syncBusy;
+  if (!p && !showingConnections) {
+    $('#view').innerHTML = '<div class="heading"><div><p class="eyebrow">WORKSPACE</p><h1>Projetos</h1>' +
+      '<p class="subtitle">Cadastre um projeto para reunir seus repositórios e o contexto dos agentes.</p></div>' +
+      btn('+ Criar projeto', 'project', 'primary') + '</div><section class="panel empty">Nenhum projeto cadastrado.</section>';
+    return;
+  }
   const info = {
     pipeline: ['Fluxo de entrega', 'Do planejamento à validação, com Gitflow e merge humano.', '+ Nova tarefa', 'task'],
     planning: ['Planejamento', 'Plano do PO, sprints e cortes de release deste projeto.', '', ''],
@@ -436,11 +479,11 @@ function render() {
     settings: ['Papéis e contexto', 'Defina quem planeja, implementa e revisa as próximas tarefas.', 'Editar configuração', 'config'],
     connections: ['Conexões', 'Verifique seus CLIs e confirme o acesso dos agentes ao Orquestrador.', '', '']
   }[view];
-  const action = isDemo() && !showingConnections ? btn('+ Criar meu projeto', 'project', 'primary') : info[3] ? btn(info[2], info[3], 'primary') : '';
+  const action = info[3] ? btn(info[2], info[3], 'primary') : '';
   const body = { pipeline, planning, runs, usage, chat, repos, settings, connections }[view](p);
   $('#view').innerHTML = '<div class="heading"><div><p class="eyebrow">' + esc(showingConnections ? 'CONFIGURAÇÕES' : p.name.toUpperCase()) +
     '</p><h1>' + info[0] + '</h1><p class="subtitle">' + info[1] + '</p></div>' + action + '</div>' +
-    (isDemo() && !showingConnections && view !== 'usage' ? '<p class="notice">Projeto de demonstração · Os dados abaixo são ilustrativos.</p>' : '') + body;
+    body;
   if ($('#messages')) $('#messages').scrollTop = $('#messages').scrollHeight;
 }
 
@@ -468,6 +511,9 @@ function showModal(type, title, fields, data = {}) {
 }
 
 function open(type, id) {
+  if (type === 'project') return showModal(type, 'Novo projeto',
+    textField('Nome', 'name', '', 'required maxlength="80"') + textField('Identificador', 'id', '', 'required maxlength="48" placeholder="meu-projeto"') +
+    area('Contexto em Markdown', 'context', '', 'maxlength="12000"') + profileFields(defaultProfile));
   const p = project();
   if (type === 'cost') showModal(type, 'Registrar custo · ' + p.name,
     textField('Valor', 'amount', '', 'required inputmode="decimal" placeholder="0,50"') +
@@ -511,16 +557,14 @@ function open(type, id) {
     textField('Versão', 'version', '', 'required maxlength="24" placeholder="1.0.0"') +
     '<label>Sprint<select name="sprint" required>' + options(sprintOptions, '') + '</select></label>' +
     '<p class="muted">A sprint precisa ter todas as tarefas com merge validado. O corte registra os commits da develop para revisão.</p>');
-  if (type === 'project') showModal(type, 'Novo projeto',
-    textField('Nome', 'name', '', 'required maxlength="80"') + textField('Identificador', 'id', '', 'required maxlength="48" placeholder="meu-projeto"') +
-    area('Contexto em Markdown', 'context', '', 'maxlength="12000"') + profileFields(defaultProfile));
   if (type === 'config') showModal(type, 'Papéis, modelos e contexto',
     profileFields(p.profile) + area('Contexto em Markdown', 'context', p.context, 'maxlength="12000"'));
   if (type === 'official') {
     if (!p.repos.length) return toast('Cadastre um repositório para escolher a fonte oficial.');
     showModal(type, 'Fonte oficial de contexto',
       '<label>Repositório oficial<select name="repo">' + options(Object.fromEntries(p.repos.map(repo => [repo.slug, repo.slug])), p.officialRepo) +
-      '</select></label><p class="muted">O arquivo docs/CONTEXTO-PROJETO.md desse repositório será a referência para as cópias de todos os outros.</p>');
+      '</select></label>' + textField('Caminho do Markdown no Git', 'path', p.officialPath || defaultContextPath, 'required maxlength="160"') +
+      '<p class="muted">O Orquestrador compara esse mesmo caminho na develop de todos os repositórios do projeto.</p>');
   }
   if (type === 'repo') showModal(type, 'Adicionar repositório',
     textField('GitHub no formato dono/repositorio', 'slug', '', 'required maxlength="100" placeholder="time/minha-api"') +
@@ -551,8 +595,8 @@ function open(type, id) {
       (task.syncError ? '<p class="modal-error">' + esc(task.syncError) + '</p>' : '') +
       (task.observation?.url ? '<a href="' + esc(task.observation.url) + '" target="_blank" rel="noopener noreferrer">Abrir PR #' + task.pr + ' no GitHub ↗</a>' : '') +
       (task.sprint ? '<small>Sprint · ' + esc(sprintOptions[task.sprint]) + '</small>' : '') +
-      (!isDemo() && p.sprints?.length ? btn('Definir sprint', 'assign', 'ghost', 'data-id="' + esc(task.id) + '"') : '') +
-      (!isDemo() && !task.pr ? btn('Vincular PR', 'link', '', 'data-id="' + esc(task.id) + '"') : '');
+      (p.sprints?.length ? btn('Definir sprint', 'assign', 'ghost', 'data-id="' + esc(task.id) + '"') : '') +
+      (!task.pr ? btn('Vincular PR', 'link', '', 'data-id="' + esc(task.id) + '"') : '');
     showModal(type, task.id + ' · ' + task.title, details);
   }
   if (type === 'link') showModal(type, 'Vincular PR · ' + id, textField('Número do PR no GitHub', 'number', '', 'type="number" min="1" required'), { task: id });
@@ -563,12 +607,15 @@ document.addEventListener('click', async event => {
   if (!button) return;
   const { action, id } = button.dataset;
   if (action === 'select') {
-    current = id; view = 'pipeline'; filter = ''; search = ''; render();
+    current = id; view = 'pipeline'; filter = ''; search = ''; historyRowsShown = historyPageSize; render();
   } else if (action === 'navigate' || action === 'settings') {
     view = id || 'settings';
     if (view === 'connections') await refreshMcpChecks();
     else if (view === 'usage') { render(); await refreshUsageLimits(); }
     else render();
+  } else if (action === 'more-prs') {
+    historyRowsShown += historyPageSize;
+    render();
   } else if (action === 'close') $('#dialog').close();
   else if (action === 'refresh-usage-limits') await refreshUsageLimits();
   else if (action === 'query-codex-limits') {
@@ -624,7 +671,7 @@ document.addEventListener('click', async event => {
     const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'CONTEXTO-PROJETO.md';
+    link.download = action === 'download-official' ? contextAudit.result.path.split('/').at(-1) : 'CONTEXTO-PROJETO.md';
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } else if (action === 'propagate') {
@@ -651,9 +698,10 @@ document.addEventListener('click', async event => {
         'do clone antes de preparar_worktree. Registre a thread e o progresso com atualizar_execucao. ' +
         'Se a sessão fornecer custo acumulado, informe com registrar_custo antes de liberar a reserva e indique a origem e o tipo do valor. ' +
         'Como Dev, trabalhe em feature/ ou bugfix/ a partir de develop e ' +
-        'vincule o PR com vincular_pr. Como QA, revise o SHA retornado e publique review formal ou veredito no PR ' +
-        'com QA: APROVADO <sha> ou QA: CORRIGIR <sha> na primeira linha. Registre o resumo com enviar_mensagem. ' +
-        'Se houver mensagem pendente do dono, responda no chat do projeto. O merge é humano.'
+        'vincule o PR com vincular_pr. Quando a entrega envolver mais de um repositório, use uma tarefa e um PR por repositório, com links entre os PRs. ' +
+        'Como QA, revise o SHA e os testes de cada PR, valide o fluxo integrado quando aplicável e publique review formal ou veredito no PR ' +
+        'com QA: APROVADO <sha> ou QA: CORRIGIR <sha> na primeira linha. Registre os testes no próprio PR. ' +
+        'Para um handoff entre repositórios, use enviar_mensagem no chat do projeto e inclua os links dos PRs. O merge é humano.'
       );
       toast('Instruções copiadas.');
     } catch { toast('O navegador não liberou a área de transferência. Use as instruções do README.'); }
@@ -664,7 +712,8 @@ document.addEventListener('click', async event => {
     try {
       await api('refresh', {});
       await load();
-      toast('Consulta ao GitHub concluída. Confira o status em cada tarefa.');
+      if (view === 'pipeline' && project()?.repos.length) await loadPrHistory(current);
+      toast('Consulta ao GitHub concluída. Confira o pipeline.');
     } catch (error) { toast(error.message); }
     finally { syncBusy = false; render(); }
   } else open(action, id);
@@ -708,7 +757,7 @@ document.addEventListener('submit', async event => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(form));
   if (formId === 'filter') {
-    search = values.search; filter = values.status; render(); return;
+    search = values.search; filter = values.status; historyRowsShown = historyPageSize; render(); return;
   }
   const submit = form.querySelector('button[type=submit]');
   submit.disabled = true;
@@ -742,6 +791,7 @@ document.addEventListener('submit', async event => {
       }
       const result = await api(actions[modal.type], args);
       if (modal.type === 'project') { current = result.id; view = 'pipeline'; search = ''; filter = ''; }
+      if (modal.type === 'repo') prHistories.delete(args.project);
       if (['repo', 'official'].includes(modal.type)) contextAudit = null;
       $('#dialog').close();
       toast('Alteração salva.');
@@ -757,11 +807,10 @@ document.addEventListener('submit', async event => {
 
 try {
   await load();
-  if (workspace.length) current = workspace[0].id;
 } catch (error) { toast(error.message); }
 render();
 setInterval(async () => {
-  if ((isDemo() && view !== 'usage') || syncBusy || queryingCodex || $('#dialog').open || document.activeElement?.matches('input, select, textarea')) return;
+  if (syncBusy || queryingCodex || $('#dialog').open || document.activeElement?.matches('input, select, textarea')) return;
   try {
     const visibleData = () => view === 'usage' ? { workspace, usageLimits } :
       ['pipeline', 'settings'].includes(view) || (view === 'repos' && repoScope === 'all') ? workspace : project();

@@ -13,8 +13,8 @@ test('preserves separate threads for simultaneous reservations and keeps their h
   const store = createStore(':memory:');
   t.after(store.close);
   const { action } = createService(store);
-  const project = 'atlas';
-  await action('create_project', { id: project, name: 'Atlas', profile });
+  const project = 'projeto-teste';
+  await action('create_project', { id: project, name: 'Projeto de teste', profile });
   await action('add_repo', { project, slug: 'org/api', kind: 'Backend' });
   for (const task of ['API-01', 'API-02']) await action('add_task', { project, task, title: task, repo: 'org/api' });
   const reservations = await Promise.all(['API-01', 'API-02'].map(task => action('claim', { project, task, role: 'dev' }, 'codex')));
@@ -45,8 +45,8 @@ test('allows the PO to plan sprints and freezes a release only after validated m
   t.after(store.close);
   const sha = 'b'.repeat(40);
   const { action } = createService(store, { readDevelop: async () => sha });
-  const project = 'atlas';
-  await action('create_project', { id: project, name: 'Atlas', profile });
+  const project = 'projeto-teste';
+  await action('create_project', { id: project, name: 'Projeto de teste', profile });
   await assert.rejects(action('save_plan', { project, markdown: '# Plano' }, 'codex'), /PO/);
   const po = await action('start_planning_run', { project }, 'claude');
   const poArgs = { project, run: po.run.id, token: po.token };
@@ -67,4 +67,37 @@ test('allows the PO to plan sprints and freezes a release only after validated m
   assert.deepEqual(cut.refs, [{ repo: 'org/api', sha }]);
   await action('assign_sprint', { project, task: 'API-01', sprint: '' });
   assert.equal((await action('workspace', {})).projects[0].releases[0].tasks[0].id, 'API-01');
+});
+
+test('serves the configured Git contract and keeps the project summary available', async t => {
+  const store = createStore(':memory:');
+  t.after(store.close);
+  const officialPath = 'docs/arquitetura/integracao.md';
+  const project = 'projeto-teste';
+  const api = 'org/api';
+  const mobile = 'org/mobile';
+  const draft = '# Como trabalhar nos dois repositórios';
+  const contract = '# Contrato de integração';
+  const { action } = createService(store, {
+    readContext: async (data, onlyShared) => {
+      const shared = data.officialPath
+        ? [api, mobile].map(repo => ({ repo, path: data.officialPath, blob: 'contract', markdown: contract }))
+        : [];
+      return onlyShared ? shared : [...shared, { repo: mobile, path: 'AGENTS.md', markdown: '# Mobile' }];
+    }
+  });
+  await action('create_project', { id: project, name: 'Projeto de teste', context: draft, profile });
+  for (const [slug, kind] of [[api, 'Backend'], [mobile, 'Mobile']]) {
+    await action('add_repo', { project, slug, kind });
+  }
+  await assert.rejects(action('official_repo', { project, repo: api, path: '../integracao.md' }), /caminho relativo/);
+  await action('official_repo', { project, repo: api, path: officialPath });
+  const audit = await action('context_audit', { project }, 'claude');
+  assert.equal(audit.path, officialPath);
+  assert.deepEqual(audit.copies.map(copy => copy.status), ['official', 'current']);
+  const context = await action('context', { project }, 'codex');
+  assert.equal(context.source, 'github');
+  assert.equal(context.markdown, contract);
+  assert.equal(context.projectContext, draft);
+  assert.deepEqual(context.docs.map(doc => doc.path), ['AGENTS.md']);
 });
