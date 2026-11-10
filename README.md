@@ -11,7 +11,13 @@ Painel local para planejar, desenvolver e revisar tarefas com Claude Desktop e C
 3. Crie um projeto, escolha os papéis e informe o login GitHub usado pelo QA. Cadastre API, web e mobile em **Repositórios**.
 4. Indique os arquivos de referência em cada repositório e, se desejar, os nomes exatos dos checks obrigatórios. Sem nomes configurados, o painel exige pelo menos um check publicado e espera todos terminarem com resultado aceito.
 
-Node.js, SQLite embutido e JavaScript de navegador. Os dados ficam em `data/workspace.sqlite`. O painel escuta somente no loopback e confia nos aplicativos locais. `ORQ_PORT` muda a porta e deve ter o mesmo valor no ambiente do painel e na configuração MCP de cada Desktop. `ORQ_DATA_DIR` muda a pasta de dados. Para usar WSL, mantenha o painel, o Node e o `gh` no mesmo ambiente e confirme que o conector Desktop alcança a porta local. Para ambos os Desktops no Windows, o caminho mais simples é executar no Windows.
+## Abrir no WSL
+
+1. Na distribuição, tenha Node.js 24 (nvm serve), `git` e `gh` autenticado.
+2. `git clone --branch develop https://github.com/guilherme-oliveria/orquestradorIA.git ~/projetos/orquestradorIA && cd ~/projetos/orquestradorIA && bash iniciar-painel.sh`.
+3. Abra [127.0.0.1:47621](http://127.0.0.1:47621) no navegador do Windows. Os Desktops no Windows iniciam o conector dentro do WSL com `wsl.exe` (seção 3 do manual).
+
+Node.js, SQLite embutido e JavaScript de navegador. Os dados ficam em `data/workspace.sqlite`. O painel escuta somente no loopback e confia nos aplicativos locais. `ORQ_PORT` muda a porta e deve ter o mesmo valor no ambiente do painel e na configuração MCP de cada Desktop. `ORQ_DATA_DIR` muda a pasta de dados. Mantenha o painel, o Node e o `gh` no mesmo ambiente (Windows ou WSL); o conector MCP de cada cliente deve rodar nesse mesmo ambiente.
 
 ## Conectar os Desktops
 

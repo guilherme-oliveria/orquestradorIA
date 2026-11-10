@@ -19,7 +19,7 @@ Para começar no Windows, use Node 24, Git, `gh`, Claude Desktop e Codex Desktop
 
 ## 2. Inicie o painel e confira o GitHub
 
-No Windows, abra `Iniciar-painel.cmd` na pasta do Orquestrador ou rode `node server.mjs` nessa pasta. No WSL, use `node server.mjs`. Abra [127.0.0.1:47621](http://127.0.0.1:47621/).
+No Windows, abra `Iniciar-painel.cmd` na pasta do Orquestrador ou rode `node server.mjs` nessa pasta. No WSL, use `bash iniciar-painel.sh`: ele carrega o Node do nvm quando necessário, confere a versão e o login do `gh` e sobe o painel. Abra [127.0.0.1:47621](http://127.0.0.1:47621/).
 
 Use os comandos abaixo no terminal do **mesmo ambiente do painel**.
 
@@ -61,6 +61,35 @@ Em **Settings → Developer → Edit Config**, adicione `orquestradoria` dentro 
   }
 }
 ```
+
+### Painel no WSL com os Desktops no Windows
+
+Se o painel, o Node e o `gh` estão no WSL e os Desktops no Windows, faça cada Desktop iniciar o conector **dentro do WSL** com `wsl.exe`. Assim o `mcp.mjs` roda no mesmo ambiente do painel e as worktrees são criadas pelo Git do WSL. Descubra o nome da distribuição com `wsl -l -v` e o caminho do Node com `which node` (no nvm, `~/.nvm/versions/node/<versão>/bin/node`). Use caminhos absolutos do Linux.
+
+Codex Desktop (`%USERPROFILE%\.codex\config.toml`):
+
+```toml
+[mcp_servers.orquestradoria]
+enabled = true
+command = "C:/Windows/System32/wsl.exe"
+args = ["-d", "Ubuntu-24.04", "--", "/home/usuario/.nvm/versions/node/v24.22.2/bin/node", "/home/usuario/projetos/orquestradorIA/mcp.mjs", "codex"]
+startup_timeout_sec = 60
+```
+
+Claude Desktop (`claude_desktop_config.json`; na versão da Microsoft Store ele fica em `%LOCALAPPDATA%\Claude-Data\<pacote>\`):
+
+```json
+{
+  "mcpServers": {
+    "orquestradoria": {
+      "command": "C:/Windows/System32/wsl.exe",
+      "args": ["-d", "Ubuntu-24.04", "--", "/home/usuario/.nvm/versions/node/v24.22.2/bin/node", "/home/usuario/projetos/orquestradorIA/mcp.mjs", "claude"]
+    }
+  }
+}
+```
+
+O painel precisa estar rodando no WSL (`bash iniciar-painel.sh`). O navegador do Windows abre `http://127.0.0.1:47621` porque o WSL 2 encaminha o localhost. Para testar o comando sem abrir o Desktop, rode no WSL um `initialize` seguido de `tools/call testar_conexao` pelo próprio `wsl.exe`; o resultado aparece em **Configurações → Conexões**. Repositórios em pastas do Windows são acessíveis pelo conector como `/mnt/c/...` em `preparar_worktree`.
 
 ### Codex CLI e Claude Code CLI
 
@@ -160,7 +189,7 @@ Use aspas ao redor do caminho do script se a pasta tiver espaços. Ajuste `ORQ_P
 
 ## 6. WSL, Docker e múltiplos projetos
 
-**WSL 2.** Confira suas distribuições com `wsl -l -v`. Se escolher o fluxo Linux, instale Node, Git e `gh` na distribuição, faça o login do GitHub nela e execute ali o painel e os CLIs. Use o caminho Linux de `mcp.mjs` nos clientes WSL. Para uma combinação de painel no WSL e Desktops no Windows, teste o endereço local no navegador Windows e a chamada MCP de ponta a ponta antes de usar o agendamento. [Instalação do WSL](https://learn.microsoft.com/windows/wsl/install) · [Rede do WSL](https://learn.microsoft.com/windows/wsl/networking)
+**WSL 2.** Confira suas distribuições com `wsl -l -v`. Se escolher o fluxo Linux, instale Node, Git e `gh` na distribuição, faça o login do GitHub nela e execute ali o painel e os CLIs. Use o caminho Linux de `mcp.mjs` nos clientes WSL. Para a combinação de painel no WSL e Desktops no Windows, configure os Desktops com `wsl.exe` como descrito na seção 3 e teste o endereço local no navegador Windows e a chamada MCP de ponta a ponta antes de usar o agendamento. [Instalação do WSL](https://learn.microsoft.com/windows/wsl/install) · [Rede do WSL](https://learn.microsoft.com/windows/wsl/networking)
 
 **Docker.** Para usar Docker Desktop a partir do WSL, habilite a integração da distribuição e confirme com `docker version`. Use Docker para as dependências e os testes de cada repositório. O painel liga apenas no loopback e usa o `gh` do ambiente em que roda. Colocá-lo em contêiner exige tratar rede, `gh` e persistência do SQLite. A versão atual é distribuída para execução direta. [Docker Desktop com WSL 2](https://docs.docker.com/desktop/features/wsl/)
 
