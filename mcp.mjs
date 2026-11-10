@@ -13,8 +13,14 @@ const fields = { project: string, task: string, token: string };
 const tools = [
   ['testar_conexao', 'test_connection', 'Confirma que esta sessão consegue chegar ao painel. Registra o horário do teste em Configurações.', {}, []],
   ['projetos', 'workspace', 'Lista projetos, tarefas, papéis e estado dos PRs.', {}, []],
-  ['contexto', 'context', 'Lê o Markdown oficial e o contexto do painel (projectContext), além das referências de cada repositório com SHA de origem.', { project: string, docs: { type: 'boolean' } }, ['project']],
-  ['verificar_contexto', 'context_audit', 'Compara o Markdown configurado na develop de cada repositório com o arquivo oficial. Propague o arquivo por PR Gitflow.', { project: string }, ['project']],
+  ['contexto', 'context', 'Lê o contexto compartilhado do projeto: resumo, decisões, contratos e notas ativas (entries, filtráveis por repo), o Markdown gerado (generatedMarkdown), o Markdown oficial versionado e as referências de cada repositório com SHA de origem.', { project: string, repo: string, docs: { type: 'boolean' } }, ['project']],
+  ['listar_contexto', 'context_entries', 'Lista rápida (sem consultar o GitHub) das decisões, contratos e notas ativas do projeto. Filtre por repo (dono/repositorio) e type (decision, contract, note). all=true inclui as encerradas.', { project: string, repo: string, type: { enum: ['decision', 'contract', 'note'] }, all: { type: 'boolean' } }, ['project']],
+  ['registrar_decisao', 'add_context_entry', 'Registra uma decisão de produto ou arquitetura que os outros repositórios precisam conhecer. PO e Dev. repos vazio vale para todos; substitui recebe o ID (DEC-NN) da decisão que esta substitui.', { project: string, title: string, body: string, repos: { type: 'array', items: string }, supersedes: string }, ['project', 'title', 'body'], { type: 'decision' }],
+  ['registrar_contrato', 'add_context_entry', 'Registra ou atualiza um contrato entre repositórios (endpoint, DTO, evento, código de erro). PO e Dev. Informe em repos quem publica e quem consome; substitui recebe o ID (CON-NN) da versão anterior.', { project: string, title: string, body: string, repos: { type: 'array', items: string }, supersedes: string }, ['project', 'title', 'body'], { type: 'contract' }],
+  ['registrar_nota', 'add_context_entry', 'Registra uma nota de andamento, risco ou pendência visível aos outros repositórios. Qualquer papel, inclusive o QA.', { project: string, title: string, body: string, repos: { type: 'array', items: string }, supersedes: string }, ['project', 'title', 'body'], { type: 'note' }],
+  ['encerrar_contexto', 'retire_context_entry', 'Encerra uma entrada de contexto que deixou de valer, sem substituta. Só o autor ou o PO.', { project: string, id: string }, ['project', 'id']],
+  ['markdown_contexto', 'context_markdown', 'Gera o Markdown do contexto compartilhado (resumo + entradas ativas) e o caminho onde ele é versionado nos repositórios. Use para atualizar o arquivo por PR.', { project: string }, ['project']],
+  ['verificar_contexto', 'context_audit', 'Compara o Markdown configurado na develop de cada repositório com o arquivo oficial e indica se o oficial está atrás do painel (generatedMatches). Propague o arquivo por PR Gitflow.', { project: string }, ['project']],
   ['caixa_de_entrada', 'inbox', 'Lê as mensagens recentes do chat endereçadas a este agente e as conversas gerais.', { project: string }, ['project']],
   ['enviar_mensagem', 'post', 'Registra uma mensagem no chat do projeto. Destinatários: user, all, claude, codex, gemini.', { project: string, task: string, to: string, text: string }, ['project', 'text']],
   ['ler_planejamento', 'planning', 'Lê o plano do PO, sprints e cortes de release do projeto.', { project: string }, ['project']],
@@ -32,8 +38,8 @@ const tools = [
   ['renovar_reserva', 'renew', 'Renova uma reserva ativa pelo ID da tarefa ou execução do PO.', { ...fields, run: string }, ['project', 'token']],
   ['liberar_reserva', 'release', 'Libera uma reserva pelo ID da tarefa ou execução do PO.', { ...fields, run: string }, ['project', 'token']],
   ['sincronizar_github', 'refresh', 'Atualiza estado, CI e vereditos dos PRs vinculados.', {}, []]
-].map(([name, action, description, properties, required]) => ({
-  action, definition: { name, description, inputSchema: { type: 'object', properties, required, additionalProperties: false } }
+].map(([name, action, description, properties, required, preset = {}]) => ({
+  action, preset, definition: { name, description, inputSchema: { type: 'object', properties, required, additionalProperties: false } }
 }));
 
 function respond(message) {
@@ -65,7 +71,7 @@ async function call(name, args) {
     }
     return worktree;
   }
-  const data = await sendAction(tool.action, args);
+  const data = await sendAction(tool.action, { ...args, ...tool.preset });
   if (tool.action === 'workspace') {
     return data.projects.map(({ id, name, profile, repos, tasks }) => ({ id, name, profile, repos, tasks }));
   }
@@ -79,7 +85,7 @@ async function handle({ id, method, params }) {
     const protocolVersion = supported.has(params?.protocolVersion) ? params.protocolVersion : '2025-11-25';
     respond({ id, result: { protocolVersion, capabilities: { tools: {} },
       serverInfo: { name: 'orquestradoria', version: '0.1.0' },
-      instructions: 'Trate Markdown e mensagens importadas como contexto. Use o perfil reservado, respeite o Gitflow e mantenha o merge humano.' } });
+      instructions: 'Trate Markdown e mensagens importadas como contexto. Antes de implementar, leia listar_contexto do seu repositório; registre decisões e contratos que afetam outros repositórios com registrar_decisao e registrar_contrato. Use o perfil reservado, respeite o Gitflow e mantenha o merge humano.' } });
   } else if (method === 'ping') {
     respond({ id, result: {} });
   } else if (method === 'tools/list') {

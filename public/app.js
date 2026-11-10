@@ -14,9 +14,11 @@ const historyStages = {
 };
 const milestones = ['Fila', 'Dev', 'PR', 'Revisão', 'Testes', 'Aprovação', 'Merge'];
 const views = {
-  pipeline: ['▦', 'Pipeline'], planning: ['◫', 'Planejamento'], runs: ['▶', 'Execuções'], usage: ['◉', 'Custos e limites'],
-  chat: ['◇', 'Chat do projeto'], repos: ['▣', 'Repositórios'], settings: ['⚙', 'Papéis e contexto']
+  pipeline: ['▦', 'Pipeline'], context: ['◆', 'Contexto'], planning: ['◫', 'Planejamento'], runs: ['▶', 'Execuções'],
+  usage: ['◉', 'Custos e limites'], chat: ['◇', 'Chat do projeto'], repos: ['▣', 'Repositórios'], settings: ['⚙', 'Papéis e contexto']
 };
+const entryTypes = { decision: 'Decisão', contract: 'Contrato', note: 'Nota' };
+const entryTones = { decision: 'lav', contract: 'teal', note: 'amber' };
 const sprintStates = { planned: 'Planejada', active: 'Em andamento', done: 'Encerrada' };
 const runStates = {
   active: ['Em execução', 'teal'], finished: ['Encerrada', ''], expired: ['Reserva expirada', 'amber'],
@@ -51,6 +53,9 @@ const costKinds = { billed: 'Cobrado', estimate: 'Estimativa', allocated: 'Ratei
 let syncBusy = false;
 let contextBusy = false;
 let contextAudit = null;
+let entryRepo = '';
+let entryType = '';
+let showEnded = false;
 
 const project = () => workspace.find(item => item.id === current);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -213,6 +218,30 @@ function pipeline(p) {
     history.errors.map(error => '<div>' + error + '</div>').join('') + '</div></section>';
 }
 
+function contextView(p) {
+  const entries = (p.contextEntries || []).filter(entry => (showEnded || entry.status === 'active') &&
+    (!entryType || entry.type === entryType) && (!entryRepo || !entry.repos.length || entry.repos.includes(entryRepo)));
+  const filters = '<div class="toolbar entry-filters"><label class="repo-scope">Repositório<select id="entry-repo">' +
+    options({ '': 'Todos', ...Object.fromEntries(p.repos.map(repo => [repo.slug, repo.slug])) }, entryRepo) + '</select></label>' +
+    '<label class="repo-scope">Tipo<select id="entry-type">' + options({ '': 'Todos', ...entryTypes }, entryType) + '</select></label>' +
+    '<label class="repo-scope"><input type="checkbox" id="entry-ended"' + (showEnded ? ' checked' : '') + '> Mostrar encerradas</label>' +
+    btn('Baixar Markdown', 'download-context', 'ghost') + '</div>';
+  const cards = entries.toReversed().map(entry => {
+    const ended = entry.status !== 'active';
+    return '<article class="card entry' + (ended ? ' ended' : '') + '"><div class="section-head"><div>' +
+      badge(entryTypes[entry.type], entryTones[entry.type]) + ' <span class="task-id">' + esc(entry.id) + '</span><h3>' + esc(entry.title) + '</h3></div>' +
+      badge(ended ? (entry.status === 'superseded' ? 'Substituída' : 'Encerrada') : 'Ativa', ended ? '' : 'teal') + '</div>' +
+      '<small>' + esc(entry.repos.join(', ') || 'Todos os repositórios') + ' · ' + esc(names[entry.author] || entry.author) + ' · ' + esc(time(entry.at)) +
+      (entry.supersedes ? ' · substitui ' + esc(entry.supersedes) : '') + (ended ? ' · encerrada em ' + esc(time(entry.endedAt)) : '') + '</small>' +
+      '<p class="pre">' + esc(entry.body) + '</p>' + (ended ? '' : '<div class="actions context-actions">' +
+        btn('Substituir', 'supersede', 'ghost', 'data-id="' + esc(entry.id) + '"') + btn('Encerrar', 'retire-entry', 'ghost', 'data-id="' + esc(entry.id) + '"') + '</div>') +
+      '</article>';
+  }).join('');
+  return '<section class="panel">' + filters + '</section><p class="muted entry-help">Os agentes leem estas entradas com <code>contexto</code> e <code>listar_contexto</code> e registram com <code>registrar_decisao</code>, <code>registrar_contrato</code> e <code>registrar_nota</code>. O Markdown gerado é a versão para <code>' +
+    esc(p.officialPath || defaultContextPath) + '</code> nos repositórios; confira as cópias em Papéis e contexto.</p><div class="project-sections">' +
+    (cards || '<section class="panel empty">Nenhuma entrada de contexto. Registre a primeira decisão ou contrato.</section>') + '</div>';
+}
+
 function chat(p) {
   const messages = p.messages.slice(-100).map(message => '<article class="message"><strong>' +
     esc(names[message.author]) + '</strong> <span class="muted">→ ' + esc(names[message.to]) + '</span> ' +
@@ -258,14 +287,17 @@ function settings(p) {
     '</span>' + badge(...statuses[copy.status]) + '</div>').join('') || '';
   const gitContext = '<section class="card compose"><div class="section-head"><h2>Contexto versionado</h2>' +
     btn('Definir fonte', 'official', 'ghost') + '</div><p class="subtitle"><code>' + esc(p.officialPath || defaultContextPath) + '</code> na <code>develop</code> de cada repositório.</p>' +
-    '<p class="subtitle">Fonte oficial · ' + esc(p.officialRepo || 'A definir') + '</p><div class="repo-list">' + copies + '</div><div class="actions context-actions">' +
-    btn('Baixar resumo do projeto', 'download-draft', 'ghost', p.context ? '' : 'disabled') +
+    '<p class="subtitle">Fonte oficial · ' + esc(p.officialRepo || 'A definir') + '</p>' +
+    (audit?.generatedMatches === false ? '<p class="subtitle">' + badge('Oficial atrás do painel', 'amber') + ' O arquivo oficial difere do Markdown gerado pelas entradas atuais da aba Contexto.</p>' :
+      audit?.generatedMatches ? '<p class="subtitle">' + badge('Oficial igual ao painel', 'teal') + '</p>' : '') +
+    '<div class="repo-list">' + copies + '</div><div class="actions context-actions">' +
+    btn('Baixar Markdown gerado', 'download-context', 'ghost') +
     btn(contextBusy ? 'Consultando…' : 'Verificar cópias', 'audit', '', !p.officialRepo || contextBusy ? 'disabled' : '') +
     (audit?.official ? btn('Baixar versão oficial', 'download-official') + btn('Copiar instruções para os PRs', 'propagate', 'primary') : '') +
     '</div></section>';
-  return '<div class="agents">' + agentsView(p) + '</div><section class="card"><h2>Contexto compartilhado</h2><div class="pre muted">' +
-    esc(p.context || 'Adicione objetivo, arquitetura, decisões e links do projeto.') +
-    '</div></section>' + gitContext + '<section class="card compose"><div class="section-head"><h2>Configuração do Desktop</h2>' +
+  return '<div class="agents">' + agentsView(p) + '</div><section class="card"><h2>Resumo do projeto</h2><div class="pre muted">' +
+    esc(p.context || 'Adicione objetivo, arquitetura e links do projeto.') +
+    '</div><small>Decisões, contratos e notas ficam na aba Contexto e entram no Markdown gerado junto com este resumo.</small></section>' + gitContext + '<section class="card compose"><div class="section-head"><h2>Configuração do Desktop</h2>' +
     btn('Copiar instruções da sessão', 'copy') +
     '</div><p class="subtitle">O perfil acompanha a tarefa como preferência. Escolha o modelo e o nível disponíveis na sessão do Desktop. Cadastre o conector MCP seguindo o README do projeto.</p></section>';
 }
@@ -471,6 +503,7 @@ function render() {
   }
   const info = {
     pipeline: ['Fluxo de entrega', 'Do planejamento à validação, com Gitflow e merge humano.', '+ Nova tarefa', 'task'],
+    context: ['Contexto compartilhado', 'Decisões, contratos e notas que os agentes leem pelo MCP em todos os repositórios.', '+ Nova entrada', 'entry'],
     planning: ['Planejamento', 'Plano do PO, sprints e cortes de release deste projeto.', '', ''],
     runs: ['Execuções', 'Acompanhe tarefas paralelas, threads e worktrees dos agentes.', '', ''],
     usage: ['Custos e limites', 'Consumo por projeto, agente e papel, com os horários de reset informados pela conta.', '+ Registrar custo', 'cost'],
@@ -480,7 +513,7 @@ function render() {
     connections: ['Conexões', 'Verifique seus CLIs e confirme o acesso dos agentes ao Orquestrador.', '', '']
   }[view];
   const action = info[3] ? btn(info[2], info[3], 'primary') : '';
-  const body = { pipeline, planning, runs, usage, chat, repos, settings, connections }[view](p);
+  const body = { pipeline, context: contextView, planning, runs, usage, chat, repos, settings, connections }[view](p);
   $('#view').innerHTML = '<div class="heading"><div><p class="eyebrow">' + esc(showingConnections ? 'CONFIGURAÇÕES' : p.name.toUpperCase()) +
     '</p><h1>' + info[0] + '</h1><p class="subtitle">' + info[1] + '</p></div>' + action + '</div>' +
     body;
@@ -571,6 +604,18 @@ function open(type, id) {
     '<label>Área<select name="kind">' + options({ Backend: 'Backend', Frontend: 'Frontend', Mobile: 'Mobile', Infra: 'Infra', Outro: 'Outro' }, 'Backend') + '</select></label>' +
     area('Arquivos Markdown da develop, um por linha', 'docs', '', 'placeholder="docs/arquitetura/integracao.md"') +
     area('Checks obrigatórios, um por linha', 'checks', '', 'placeholder="api-tests"'));
+  if (type === 'entry') {
+    if (!p.repos.length) return toast('Cadastre um repositório antes de registrar contexto.');
+    const previous = id ? p.contextEntries?.find(entry => entry.id === id) : null;
+    showModal(type, previous ? 'Substituir ' + previous.id + ' · ' + previous.title : 'Nova entrada de contexto',
+      '<label>Tipo<select name="type"' + (previous ? ' disabled' : '') + '>' + options(entryTypes, previous?.type || 'decision') + '</select></label>' +
+      textField('Título', 'title', previous?.title, 'required maxlength="120"') +
+      '<fieldset><legend>Repositórios (nenhum marcado = todos)</legend><div class="checks">' +
+      p.repos.map(repo => '<label class="check"><input type="checkbox" name="repos" value="' + esc(repo.slug) + '"' +
+        (previous?.repos.includes(repo.slug) ? ' checked' : '') + '>' + esc(repo.slug) + '</label>').join('') + '</div></fieldset>' +
+      area('Conteúdo em Markdown', 'body', previous?.body, 'required maxlength="8000"'),
+      { supersedes: previous?.id || null, entryType: previous?.type || null });
+  }
   if (type === 'task') {
     if (!p.repos.length) return toast('Cadastre um repositório antes de criar tarefas.');
     showModal(type, 'Nova tarefa',
@@ -617,6 +662,16 @@ document.addEventListener('click', async event => {
     historyRowsShown += historyPageSize;
     render();
   } else if (action === 'close') $('#dialog').close();
+  else if (action === 'supersede') open('entry', id);
+  else if (action === 'retire-entry') {
+    if (!confirm('Encerrar a entrada ' + id + '? Ela some do Markdown gerado e dos agentes.')) return;
+    button.disabled = true;
+    try {
+      await api('retire_context_entry', { project: current, id });
+      await load();
+      render();
+    } catch (error) { toast(error.message); button.disabled = false; }
+  }
   else if (action === 'refresh-usage-limits') await refreshUsageLimits();
   else if (action === 'query-codex-limits') {
     queryingCodex = true;
@@ -665,26 +720,36 @@ document.addEventListener('click', async event => {
       contextAudit = { project: auditProject, result: await api('context_audit', { project: auditProject }) };
     } catch (error) { toast(error.message); }
     finally { contextBusy = false; render(); }
-  } else if (action === 'download-draft' || action === 'download-official') {
-    const markdown = action === 'download-draft' ? project().context : contextAudit?.result.official?.markdown;
+  } else if (action === 'download-context' || action === 'download-official') {
+    let markdown = contextAudit?.result.official?.markdown;
+    let filename = contextAudit?.result.path.split('/').at(-1);
+    if (action === 'download-context') {
+      try {
+        const generated = await api('context_markdown', { project: current });
+        markdown = generated.markdown;
+        filename = generated.path.split('/').at(-1);
+      } catch (error) { return toast(error.message); }
+    }
     if (markdown === undefined) return;
     const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = action === 'download-official' ? contextAudit.result.path.split('/').at(-1) : 'CONTEXTO-PROJETO.md';
+    link.download = filename;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   } else if (action === 'propagate') {
     const audit = contextAudit?.result;
     const targets = audit?.copies.filter(copy => ['missing', 'diverged'].includes(copy.status)) || [];
-    if (!targets.length) return toast('Nenhuma cópia desatualizada ou ausente na última consulta.');
+    const stale = audit?.generatedMatches === false;
+    if (!targets.length && !stale) return toast('Nenhuma cópia desatualizada ou ausente na última consulta.');
     const source = audit.officialRepo + ' no commit ' + audit.official.sha;
     try {
       await navigator.clipboard.writeText(
-        'Projeto ' + current + '. Propague o arquivo ' + audit.path + ' de ' + source + '. ' +
-        'Confirme a versão oficial atual com o MCP verificar_contexto antes de alterar. ' +
-        'Abra um PR Gitflow de feature/ ou bugfix/ para develop em cada repositório: ' +
-        targets.map(item => item.repo).join(', ') + '. Preserve o conteúdo idêntico ao oficial. Deixe o merge com o dono.'
+        'Projeto ' + current + '. ' +
+        (stale ? 'O arquivo ' + audit.path + ' no repositório oficial ' + audit.officialRepo + ' está atrás do painel: gere o conteúdo com o MCP markdown_contexto e atualize o arquivo por PR Gitflow (feature/ ou bugfix/ para develop). ' : '') +
+        (targets.length ? 'Propague o arquivo ' + audit.path + ' de ' + source + ' por PR Gitflow para develop em cada repositório: ' +
+          targets.map(item => item.repo).join(', ') + '. Preserve o conteúdo idêntico ao oficial. ' : '') +
+        'Confirme a versão oficial atual com o MCP verificar_contexto antes de alterar. Deixe o merge com o dono.'
       );
       toast('Instruções dos PRs copiadas.');
     } catch { toast('O navegador não liberou a área de transferência.'); }
@@ -693,6 +758,8 @@ document.addEventListener('click', async event => {
     try {
       await navigator.clipboard.writeText(
         'Use o MCP orquestradoria para trabalhar no projeto ' + current + '. Leia contexto e caixa_de_entrada. ' +
+        'Antes de implementar, leia listar_contexto do seu repositório. Registre com registrar_decisao e registrar_contrato (PO e Dev) o que afeta outros repositórios ' +
+        'e com registrar_nota riscos e pendências; use substitui para atualizar uma entrada existente. ' +
         'Veja seu papel em projetos e consulte ler_planejamento. Como PO, use iniciar_planejamento, publique o plano com salvar_plano e organize as sprints. ' +
         'Como Dev ou QA, reserve uma tarefa com reservar_tarefa e confirme o perfil de modelo e esforço. Atualize as referências ' +
         'do clone antes de preparar_worktree. Registre a thread e o progresso com atualizar_execucao. ' +
@@ -720,6 +787,14 @@ document.addEventListener('click', async event => {
 });
 
 document.addEventListener('change', event => {
+  if (['entry-repo', 'entry-type', 'entry-ended'].includes(event.target.id)) {
+    if (event.target.id === 'entry-repo') entryRepo = event.target.value;
+    else if (event.target.id === 'entry-type') entryType = event.target.value;
+    else showEnded = event.target.checked;
+    render();
+    $('#' + event.target.id)?.focus({ preventScroll: true });
+    return;
+  }
   if (event.target.id === 'cost-scope') {
     costScope = event.target.value;
     render();
@@ -766,6 +841,7 @@ document.addEventListener('submit', async event => {
     else {
       const actions = {
         project: 'create_project', config: 'settings', repo: 'add_repo', task: 'add_task', link: 'attach_pr', official: 'official_repo',
+        entry: 'add_context_entry',
         plan: 'save_plan', sprint: 'save_sprint', assign: 'assign_sprint', cut: 'cut_release',
         cost: 'record_cost', limits: 'save_usage_limits'
       };
@@ -775,6 +851,11 @@ document.addEventListener('submit', async event => {
       ]));
       if (modal.type === 'repo') { args.docs = split(values.docs); args.checks = split(values.checks); }
       if (modal.type === 'task') args.depends = split(values.depends);
+      if (modal.type === 'entry') {
+        args.type = values.type || modal.entryType;
+        args.repos = [...form.querySelectorAll('input[name=repos]:checked')].map(input => input.value);
+        if (modal.supersedes) args.supersedes = modal.supersedes;
+      }
       if (modal.type === 'link') args.task = modal.task;
       if (modal.type === 'assign') args.task = modal.task;
       if (modal.type === 'sprint') args.sprint = modal.sprint;

@@ -54,12 +54,16 @@ Use os comentários do PR para evidências de teste, correções e vereditos. O 
 
 O modelo preferido é um nome de modelo digitado por papel. Em branco, vale o padrão da sessão. O nível de esforço também fica no perfil. O MCP entrega os dois ao agente quando ele reserva uma tarefa. Selecione os valores que a sua conta oferece no Desktop antes de executar. O perfil das tarefas já cadastradas é preservado quando você muda a configuração do projeto.
 
-## Contexto versionado nos repositórios
+## Contexto compartilhado
+
+O painel guarda decisões (`DEC-NN`), contratos entre repositórios (`CON-NN`) e notas (`NOT-NN`), cada uma com o escopo de repositórios a que se aplica. Os agentes leem com `listar_contexto` e `contexto` e registram com `registrar_decisao`, `registrar_contrato` e `registrar_nota` (PO e Dev registram decisões e contratos; o QA registra notas). Uma entrada é substituída por outra, nunca editada.
+
+### Markdown versionado nos repositórios
 
 1. Em **Papéis e contexto → Contexto versionado**, escolha o repositório oficial e o caminho do Markdown na branch `develop`. Você pode apontar para um contrato que já existe.
-2. Se ainda precisar criar um documento compartilhado, publique `docs/CONTEXTO-PROJETO.md` na `develop` oficial por PR. Use **Baixar resumo do projeto** para aproveitar o contexto cadastrado no painel.
-3. Use **Verificar cópias**. A comparação consulta o arquivo no commit observado da `develop` de cada repositório. A opção **Copiar instruções para os PRs** gera o handoff para o Dev atualizar as cópias ausentes ou divergentes por PR. Reaplique a checagem após os merges.
-4. Em cada repositório, referencie esse Markdown no `AGENTS.md` e no `CLAUDE.md` quando aplicável. O MCP entrega o Markdown oficial com origem e SHA, o resumo do painel em `projectContext` e as referências específicas dos repositórios.
+2. **Baixar Markdown** (aba Contexto) ou `markdown_contexto` no MCP gera o arquivo a partir do resumo do projeto e das entradas ativas. Publique-o em `docs/CONTEXTO-PROJETO.md` na `develop` oficial por PR.
+3. Use **Verificar cópias**. A comparação consulta o arquivo no commit observado da `develop` de cada repositório e avisa quando o oficial está atrás do painel. **Copiar instruções para os PRs** gera o handoff para o Dev atualizar o oficial e as cópias ausentes ou divergentes por PR. Reaplique a checagem após os merges.
+4. Em cada repositório, referencie esse Markdown no `AGENTS.md` e no `CLAUDE.md` quando aplicável. O MCP entrega as entradas do repositório, o Markdown gerado, o Markdown oficial com origem e SHA, o resumo do painel em `projectContext` e as referências específicas dos repositórios.
 
 Um repositório template do GitHub pode iniciar projetos novos com essa estrutura. Para repositórios existentes, publique o arquivo por PR e use a comparação do painel nas atualizações seguintes. [Templates no GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template)
 
