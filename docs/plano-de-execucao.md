@@ -1,7 +1,7 @@
 # Orquestrador IA — plano de execução (MVP 2)
 
 > Criado em 2026-11-10 a partir do guia `gui-arquitetura claude-codex`, do código da `develop` (v0.1.0) e da imagem de referência do painel.
-> **Status: aprovado em 2026-11-10; onda 0 em andamento.**
+> **Status: aprovado em 2026-11-10; onda 0 integrada (PR #3), onda 1 em andamento.**
 
 A `develop` já entrega cadastro de projeto com N repositórios, papéis por agente (PO/Dev/QA → Claude/Codex/Gemini), leitura de contexto pelo MCP e pipeline de tarefas/PRs por projeto. Este plano **não reescreve nada**: migra o painel para o WSL, fecha as três lacunas dos problemas originais (contexto preso nos `.md`, visão única de todos os projetos, agentes plugáveis) e aproxima o painel da imagem de referência.
 
@@ -94,17 +94,17 @@ A release é aberta e aprovada pelo Guilherme (`release/X.Y.Z` → `main`).
 
 ### Onda 1 — contexto estruturado (problema 1)
 
-- [ ] **ORQ-04 Entradas de contexto no modelo e no serviço**
+- [x] **ORQ-04 Entradas de contexto no modelo e no serviço**
   Depende de: ORQ-01
   Faz: `project.contextEntries[]` com `{ id, type: decision|contract|note, repos[], title, body (md ≤ 8 KB), author, at, supersedes, status }`; ações `add_context_entry`, `supersede_context_entry`, `list_context_entries` (filtro por repo/tipo); `contexto` do MCP passa a devolver também as entradas ativas relevantes ao repo da tarefa reservada; limite de 300 entradas por projeto; testes em `test/context.test.mjs`.
   Pronto quando: teste cobre registrar, substituir e filtrar por repo; `contexto` devolve entrada criada por outro agente.
 
-- [ ] **ORQ-05 Tools MCP de escrita de contexto**
+- [x] **ORQ-05 Tools MCP de escrita de contexto**
   Depende de: ORQ-04
   Faz: tools `registrar_decisao`, `registrar_contrato`, `registrar_nota` (com `repos` e `substitui`), `listar_contexto`; PO e Dev escrevem, QA só nota; autor registrado pelo agente da sessão; instruções da sessão (botão "Copiar instruções") atualizadas para pedir o registro de decisões e contratos.
   Pronto quando: na sessão do Codex, `registrar_contrato` cria a entrada e a sessão do Claude a lê com `contexto`.
 
-- [ ] **ORQ-06 Aba "Contexto" e exportação**
+- [x] **ORQ-06 Aba "Contexto" e exportação**
   Depende de: ORQ-04
   Faz: nova view `Contexto` por projeto (lista por tipo e repo, filtro, criar/substituir pelo painel); botão "Gerar Markdown" que monta o `docs/CONTEXTO-PROJETO.md` a partir do resumo + entradas ativas e copia as instruções do PR de propagação (reaproveita `propagate`); "Verificar cópias" passa a comparar com o Markdown gerado.
   Pronto quando: o Markdown gerado contém todas as entradas ativas e a comparação de cópias aponta divergência quando um repo está atrasado.

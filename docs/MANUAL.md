@@ -131,9 +131,26 @@ Créditos adquiridos dentro de um plano e saldo de uma plataforma de API são se
 
 1. Clique em **Criar meu projeto**. Defina o identificador e escolha PO, Dev e QA. Informe o login GitHub que vai publicar os vereditos do QA.
 2. Em **Repositórios**, adicione os repos no formato `dono/repositorio`. Se houver CI obrigatório, copie os nomes exatos dos checks do GitHub. Deixar o campo vazio faz o painel exigir ao menos um check e considerar todos os checks publicados.
-3. Em **Papéis e contexto**, escolha o repositório oficial e o caminho do Markdown compartilhado. Você pode reutilizar um contrato existente. Para um documento novo, use `docs/CONTEXTO-PROJETO.md` e publique as cópias por PR para a `develop` de cada repo. **Verificar cópias** mostra o que está atualizado, divergente ou ausente. Documentos específicos de cada repo podem ser cadastrados separadamente.
-4. Crie as tarefas que quer acompanhar. Declare dependências pelos IDs das tarefas cadastradas. Para um PR já em andamento, abra a tarefa, use **Vincular PR** e informe o número. O painel valida o repo, a branch de origem `feature/` ou `bugfix/` e o destino `develop`.
-5. Clique em **Sincronizar GitHub**. A partir daí, o painel consulta os PRs vinculados periodicamente. Nesta versão, cadastros, importação de PRs e escolhas de papel são feitos por projeto.
+3. Em **Papéis e contexto**, escolha o repositório oficial e o caminho do Markdown compartilhado. Você pode reutilizar um contrato existente. Para um documento novo, use `docs/CONTEXTO-PROJETO.md` e publique as cópias por PR para a `develop` de cada repo. **Verificar cópias** mostra o que está atualizado, divergente ou ausente e se o arquivo oficial está atrás do painel. Documentos específicos de cada repo podem ser cadastrados separadamente.
+4. Em **Contexto**, registre as decisões, os contratos entre repositórios e as notas que os agentes precisam conhecer (veja "Contexto compartilhado" abaixo).
+5. Crie as tarefas que quer acompanhar. Declare dependências pelos IDs das tarefas cadastradas. Para um PR já em andamento, abra a tarefa, use **Vincular PR** e informe o número. O painel valida o repo, a branch de origem `feature/` ou `bugfix/` e o destino `develop`.
+6. Clique em **Sincronizar GitHub**. A partir daí, o painel consulta os PRs vinculados periodicamente. Nesta versão, cadastros, importação de PRs e escolhas de papel são feitos por projeto.
+
+### Contexto compartilhado
+
+O painel é a fonte viva do contexto que atravessa os repositórios. Cada entrada tem um tipo, um ID e o escopo de repositórios a que se aplica (vazio = todos):
+
+| Tipo | ID | Quem registra | Para quê |
+| --- | --- | --- | --- |
+| Decisão | `DEC-NN` | PO e Dev | Escolhas de produto e arquitetura que os outros repositórios precisam respeitar |
+| Contrato | `CON-NN` | PO e Dev | Endpoints, DTOs, eventos e códigos de erro entre API, web e mobile |
+| Nota | `NOT-NN` | Qualquer papel, inclusive o QA | Andamento, riscos e pendências visíveis aos outros repositórios |
+
+Uma entrada nunca é editada: para mudar, registre outra com **Substituir** (ou `substitui` no MCP), e a anterior fica marcada como substituída. **Encerrar** retira uma entrada sem substituta; só o autor ou o PO fazem isso.
+
+Pelo MCP, os agentes usam `listar_contexto` (filtro por `repo` e `type`, rápido, sem GitHub), `contexto` (traz as entradas do repositório junto com o Markdown oficial e as referências), `registrar_decisao`, `registrar_contrato`, `registrar_nota` e `encerrar_contexto`. A instrução da sessão já pede para ler `listar_contexto` antes de implementar e registrar o que afeta outros repositórios.
+
+O arquivo versionado nos repositórios passa a ser um **snapshot gerado**: **Baixar Markdown** na aba Contexto (ou `markdown_contexto` no MCP) monta o resumo do projeto mais as entradas ativas. Publique-o no repositório oficial por PR e propague as cópias; **Verificar cópias** avisa quando o oficial está atrás do painel e **Copiar instruções para os PRs** gera o pedido para o Dev atualizar.
 
 Na tela **Repositórios**, cada cartão mostra a área e o nome do projeto. Use **Todos os projetos** para ver os repositórios cadastrados em uma única lista. O botão **+ Repositório** cadastra no projeto selecionado na barra lateral.
 
