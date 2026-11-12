@@ -168,6 +168,28 @@ O arquivo versionado nos repositórios passa a ser um **snapshot gerado**: **Bai
 
 Na tela **Repositórios**, cada cartão mostra a área e o nome do projeto. Use **Todos os projetos** para ver os repositórios cadastrados em uma única lista. O botão **+ Repositório** cadastra no projeto selecionado na barra lateral.
 
+### Kanban
+
+Cada projeto abre no **Kanban**, com seis colunas: A fazer, Em desenvolvimento, Code review, Em teste, Aguardando seu merge e Concluído.
+
+**De onde vêm os cards.** Use **Importar do plano de ação** para criar um card por tarefa do Markdown que o PO mantém em cada repositório (padrão `docs/arquitetura/plano-de-acao.md`, lido da `develop`). O formato é o do guia: `- [ ] **MOB-18b Ações na notificação.** descrição… Depende de: MOB-18, BE-12`. Tarefas marcadas `[x]` entram em Concluído, os títulos `##` viram as fases do filtro e as dependências deixam o card marcado como "Aguardando X" até a anterior terminar. Importe de novo sempre que o PO atualizar o plano: só entram as tarefas novas, e as que ele marcou `[x]` passam para Concluído. O PO também pode importar pelo MCP com `importar_plano`. Tarefas avulsas continuam em **+ Nova tarefa**.
+
+**Como os cards andam.**
+
+| Situação | Coluna | Quem move |
+| --- | --- | --- |
+| Sem PR | Onde você soltar (borda tracejada) | Você arrastando, ou o agente com `mover_tarefa` |
+| Agente reservou a tarefa pelo MCP | Em desenvolvimento | Automático |
+| PR aberto para a `develop` (rascunho ou com correção pedida) | Em desenvolvimento | Automático |
+| PR aguardando o QA | Code review | Automático |
+| QA aprovou, CI rodando | Em teste | Automático |
+| QA aprovou e CI passou | Aguardando seu merge | Automático |
+| PR mergeado | Concluído | Automático |
+
+O PR é ligado ao card pelo ID no início do título do PR (`MOB-18b Ações na notificação` liga ao card `MOB-18B`). A partir daí o card deixa de ser arrastável e segue o GitHub. PR sem card correspondente cria um card novo.
+
+O endereço `http://127.0.0.1:47621/#id-do-projeto/board` abre direto no quadro de um projeto.
+
 ### Acompanhamento automático dos PRs
 
 O painel não depende de o agente avisar. A cada minuto (ou em **Sincronizar GitHub**) ele lista os PRs abertos para a `develop` de cada repositório cadastrado e cria o card de qualquer PR que ainda não esteja vinculado a uma tarefa. O ID do card vem do início do título do PR (`MOB-UX-04 Desfazer…` vira `MOB-UX-04`); sem ID no título, usa a área e o número (`MOBILE-PR126`). Entram PRs de branches `feature/`, `bugfix/` e das branches que os ambientes dos agentes nomeiam (`claude/`, `codex/`, `copilot/`). PRs do Dependabot ficam só no histórico.

@@ -14,7 +14,7 @@ const historyStages = {
 };
 const milestones = ['Fila', 'Desenvolvimento', 'PR', 'Revisão', 'Testes', 'Aprovação', 'Seu merge'];
 const views = {
-  pipeline: ['▦', 'Pipeline'], context: ['◆', 'Contexto'], planning: ['◫', 'Planejamento'], runs: ['▶', 'Execuções'],
+  board: ['▤', 'Kanban'], pipeline: ['▦', 'Pipeline'], context: ['◆', 'Contexto'], planning: ['◫', 'Planejamento'], runs: ['▶', 'Execuções'],
   usage: ['◉', 'Custos e limites'], chat: ['◇', 'Chat do projeto'], repos: ['▣', 'Repositórios'], settings: ['⚙', 'Papéis e contexto']
 };
 const entryTypes = { decision: 'Decisão', contract: 'Contrato', note: 'Nota' };
@@ -34,6 +34,9 @@ let workspace = [];
 let current;
 let view = 'overview';
 const overviewFilter = { project: '', repo: '', agent: '', stage: '' };
+const boardFilter = { repo: '', group: '', search: '' };
+let boardAllDone = false;
+let dragging = null;
 let modal;
 let timer;
 let search = '';
@@ -106,9 +109,11 @@ function toast(message) {
 function stageFor(task, p) {
   if (task.syncError) return 'error';
   if (task.lease?.role === 'dev') return 'dev';
+  // Card sem PR fica onde foi colocado no quadro (ou onde o plano de ação o marcou).
+  if (!task.pr && task.status && task.status !== 'todo') return { doing: 'dev', review: 'review', test: 'tests', done: 'merged' }[task.status];
   const stage = task.observation?.stage || 'queue';
-  if (stage === 'queue' && task.depends.some(id => !p.tasks.some(other => other.id === id &&
-      !other.syncError && other.observation?.stage === 'merged'))) return 'blocked';
+  const done = other => !other.syncError && (other.observation?.stage === 'merged' || (!other.pr && other.status === 'done'));
+  if (stage === 'queue' && task.depends.some(id => !p.tasks.some(other => other.id === id && done(other)))) return 'blocked';
   return stage;
 }
 
@@ -208,6 +213,53 @@ function rows(p) {
     .map(task => taskRow(task, p)).join('');
 }
 
+const columns = {
+  todo: ['A fazer', ''], doing: ['Em desenvolvimento', 'lav'], review: ['Code review', 'lav'],
+  test: ['Em teste', 'teal'], merge: ['Aguardando seu merge', 'amber'], done: ['Concluído', 'teal']
+};
+const stageColumn = {
+  queue: 'todo', blocked: 'todo', dev: 'doing', draft: 'doing', changes: 'doing', error: 'doing', review: 'review',
+  tests: 'test', merge: 'merge', merged: 'done', 'merged-unverified': 'done', closed: 'done'
+};
+
+function board(p) {
+  const f = boardFilter;
+  const groups = [...new Set(p.tasks.map(task => task.group).filter(Boolean))];
+  const term = f.search.trim().toLowerCase();
+  const visible = p.tasks.filter(task => (!f.repo || task.repo === f.repo) && (!f.group || task.group === f.group) &&
+    (!term || (task.id + ' ' + task.title + ' ' + (task.pr ? '#' + task.pr : '')).toLowerCase().includes(term)));
+  const kinds = Object.fromEntries(p.repos.map(repo => [repo.slug, repo.kind]));
+  const card = task => {
+    const stage = stageFor(task, p);
+    const corrections = correctionsLabel(task.observation?.corrections);
+    const flags = (stage === 'blocked' ? badge('Aguardando ' + task.depends.filter(id => !p.tasks.some(other => other.id === id &&
+        (other.observation?.stage === 'merged' || (!other.pr && other.status === 'done')))).join(', '), 'amber') : '') +
+      (stage === 'changes' ? badge('Correções solicitadas', 'amber') : '') + (stage === 'draft' ? badge('PR em rascunho', 'lav') : '') +
+      (stage === 'closed' ? badge('Cancelado', '') : '') + (stage === 'merged-unverified' ? badge('Merge sem validação', 'red') : '') +
+      (stage === 'error' ? badge('Falha na sincronização', 'red') : '') + (corrections ? badge(corrections, 'amber') : '') +
+      (task.lease ? badge(names[task.profile[task.lease.role].agent] + ' trabalhando', 'teal') : '');
+    return '<article class="kcard' + (task.pr ? '' : ' manual') + '" ' + (task.pr ? '' : 'draggable="true" ') + 'data-card="' + esc(task.id) +
+      '"><button class="task-button" data-action="details" data-id="' + esc(task.id) + '"><span class="task-id">' + esc(task.id) +
+      (task.pr ? ' · PR #' + task.pr : '') + '</span>' + esc(task.title) + '</button><small>' + esc(kinds[task.repo] || '') + ' · ' +
+      esc(task.repo.split('/')[1]) + '</small>' + (flags ? '<div class="kflags">' + flags + '</div>' : '') + '<small>' +
+      esc(names[task.profile.dev.agent]) + ' desenvolve, ' + esc(names[task.profile.qa.agent]) + ' revisa</small></article>';
+  };
+  const cols = Object.entries(columns).map(([key, [label, tone]]) => {
+    const tasks = visible.filter(task => stageColumn[stageFor(task, p)] === key).toReversed();
+    const limit = key === 'done' && !boardAllDone ? 12 : Infinity;
+    return '<section class="kcol" data-column="' + key + '"><header><strong class="stage-text ' + tone + '">' + label + '</strong>' +
+      badge(tasks.length) + '</header><div class="kcards">' + (tasks.slice(0, limit).map(card).join('') || '<p class="kempty">Vazio</p>') +
+      (tasks.length > limit ? btn('Mostrar todos (' + tasks.length + ')', 'board-all-done', 'ghost') : '') + '</div></section>';
+  }).join('');
+  const filters = '<div class="toolbar entry-filters"><label class="repo-scope">Repositório<select data-board="repo">' +
+    options({ '': 'Todos', ...Object.fromEntries(p.repos.map(repo => [repo.slug, repo.kind + ' · ' + repo.slug.split('/')[1]])) }, f.repo) + '</select></label>' +
+    (groups.length ? '<label class="repo-scope">Fase<select data-board="group">' + options({ '': 'Todas', ...Object.fromEntries(groups.map(group => [group, group])) }, f.group) + '</select></label>' : '') +
+    '<label class="repo-scope">Buscar<input data-board="search" type="search" placeholder="ID, título ou PR" value="' + esc(f.search) + '"></label>' +
+    btn('Importar do plano de ação', 'importplan', 'ghost') + '</div>';
+  return '<section class="panel">' + filters + '</section><p class="muted entry-help">Card com PR anda sozinho: PR aberto → Code review → Em teste → Aguardando seu merge → Concluído, e volta para Em desenvolvimento quando o QA pede correção. Card sem PR (borda tracejada) é você quem arrasta.</p>' +
+    '<div class="kanban">' + cols + '</div>';
+}
+
 function activeReservations() {
   const byAgent = new Map();
   for (const owner of workspace) {
@@ -256,8 +308,10 @@ function overview() {
   const head = '<thead><tr><th>Card / repositório</th><th><div class="rail-labels">' + milestones.map(name => '<span>' + name + '</span>').join('') +
     '</div></th><th>Status</th></tr></thead>';
   const blocks = workspace.filter(p => !f.project || p.id === f.project).map(p => {
-    const tasks = p.tasks.filter(task => (!f.repo || task.repo === f.repo) && (!f.stage || stageFor(task, p) === f.stage) &&
+    const matching = p.tasks.filter(task => (!f.repo || task.repo === f.repo) && (!f.stage || stageFor(task, p) === f.stage) &&
       (!f.agent || task.profile.dev.agent === f.agent || task.profile.qa.agent === f.agent));
+    const tasks = f.stage ? matching : matching.filter(task => stageFor(task, p) !== 'merged');
+    const hidden = matching.length - tasks.length;
     const { dev, qa } = p.profile;
     const preset = '<label class="repo-scope">Próximos cards<select data-preset="' + esc(p.id) + '">' + options({
       auto: 'Automático, pela configuração e pela cota',
@@ -267,8 +321,9 @@ function overview() {
     return '<section class="panel overview-project"><div class="toolbar"><div><h2>' + esc(p.name) + '</h2><small>' +
       esc(p.repos.map(repo => repo.kind + ' · ' + repo.slug).join('   ') || 'Sem repositórios') + '</small></div>' + preset +
       btn('Abrir projeto', 'select', 'ghost', 'data-id="' + esc(p.id) + '"') + '</div><div class="table-wrap"><table>' + head + '<tbody>' +
-      (tasks.toReversed().map(task => taskRow(task, p)).join('') || '<tr><td colspan="3" class="empty">Nenhum card neste filtro.</td></tr>') +
-      '</tbody></table></div></section>';
+      (tasks.toReversed().map(task => taskRow(task, p)).join('') || '<tr><td colspan="3" class="empty">Nenhum card em andamento neste filtro.</td></tr>') +
+      '</tbody></table></div>' + (hidden ? '<div class="legend">' + hidden + (hidden === 1 ? ' card concluído oculto' : ' cards concluídos ocultos') +
+        '. Escolha a etapa "Merge feito" para ver.</div>' : '') + '</section>';
   }).join('');
   return '<p class="overview-summary">' + summary + '</p><div class="agents">' + agentCards + '</div><section class="panel">' + filters +
     '</section><div class="project-sections overview-list">' + blocks + '</div>';
@@ -622,6 +677,7 @@ function render() {
     return;
   }
   const info = {
+    board: ['Kanban', 'As tarefas do plano em colunas, do A fazer ao merge.', '+ Nova tarefa', 'task'],
     pipeline: ['Fluxo de entrega', 'Do planejamento à validação, com Gitflow e merge humano.', '+ Nova tarefa', 'task'],
     context: ['Contexto compartilhado', 'Decisões, contratos e notas que os agentes leem pelo MCP em todos os repositórios.', '+ Nova entrada', 'entry'],
     planning: ['Planejamento', 'Plano do PO, sprints e cortes de release deste projeto.', '', ''],
@@ -634,7 +690,7 @@ function render() {
     overview: ['Visão geral', 'Todos os projetos, repositórios, cards e PRs, com a etapa de cada um.', '', '']
   }[view];
   const action = info[3] ? btn(info[2], info[3], 'primary') : '';
-  const body = { pipeline, context: contextView, planning, runs, usage, chat, repos, settings, connections, overview }[view](p);
+  const body = { board, pipeline, context: contextView, planning, runs, usage, chat, repos, settings, connections, overview }[view](p);
   $('#view').innerHTML = '<div class="heading"><div><p class="eyebrow">' + esc(showingConnections ? 'CONFIGURAÇÕES' : showingOverview ? 'WORKSPACE' : p.name.toUpperCase()) +
     '</p><h1>' + info[0] + '</h1><p class="subtitle">' + info[1] + '</p></div>' + action + '</div>' +
     body;
@@ -713,6 +769,12 @@ function open(type, id) {
     '<p class="muted">A sprint precisa ter todas as tarefas com merge validado. O corte registra os commits da develop para revisão.</p>');
   if (type === 'config') showModal(type, 'Papéis, modelos e contexto',
     profileFields(p.profile) + area('Contexto em Markdown', 'context', p.context, 'maxlength="12000"'));
+  if (type === 'importplan') {
+    if (!p.repos.length) return toast('Cadastre um repositório antes de importar o plano.');
+    showModal(type, 'Importar do plano de ação',
+      textField('Caminho do Markdown em cada repositório', 'path', p.actionPlanPath || 'docs/arquitetura/plano-de-acao.md', 'required maxlength="160"') +
+      '<p class="muted">O painel lê esse arquivo na develop de cada repositório e cria um card por linha no formato <code>- [ ] **ID Título.** descrição… Depende de: X, Y</code>. Tarefas marcadas <code>[x]</code> entram como concluídas, os títulos <code>##</code> viram as fases e as dependências bloqueiam o card até a anterior terminar. Pode importar de novo quando o PO atualizar o plano: só entram as tarefas novas.</p>');
+  }
   if (type === 'plansource') {
     if (!p.repos.length) return toast('Cadastre um repositório para escolher o arquivo do plano.');
     showModal(type, 'Plano no repositório',
@@ -785,7 +847,8 @@ document.addEventListener('click', async event => {
   const { action, id } = button.dataset;
   if (button.dataset.project && workspace.some(item => item.id === button.dataset.project)) current = button.dataset.project;
   if (action === 'select') {
-    current = id; view = 'pipeline'; filter = ''; search = ''; historyRowsShown = historyPageSize; render();
+    current = id; view = 'board'; filter = ''; search = ''; historyRowsShown = historyPageSize;
+    Object.assign(boardFilter, { repo: '', group: '', search: '' }); boardAllDone = false; render();
   } else if (action === 'navigate' || action === 'settings') {
     view = id || 'settings';
     if (view === 'connections') await refreshMcpChecks();
@@ -801,6 +864,7 @@ document.addEventListener('click', async event => {
     render();
   } else if (action === 'close') $('#dialog').close();
   else if (action === 'supersede') open('entry', id);
+  else if (action === 'board-all-done') { boardAllDone = true; render(); }
   else if (action === 'reload-plan') { repoPlans.delete(current); render(); }
   else if (action === 'retire-entry') {
     if (!confirm('Encerrar a entrada ' + id + '? Ela some do Markdown gerado e dos agentes.')) return;
@@ -914,7 +978,44 @@ document.addEventListener('click', async event => {
   } else open(action, id);
 });
 
+document.addEventListener('dragstart', event => {
+  const card = event.target.closest?.('[data-card]');
+  if (!card) return;
+  dragging = card.dataset.card;
+  event.dataTransfer.setData('text/plain', dragging);
+  event.dataTransfer.effectAllowed = 'move';
+});
+document.addEventListener('dragend', () => {
+  dragging = null;
+  document.querySelectorAll('.kcol.over').forEach(node => node.classList.remove('over'));
+});
+document.addEventListener('dragover', event => {
+  const column = event.target.closest?.('[data-column]');
+  if (!column || !dragging) return;
+  event.preventDefault();
+  document.querySelectorAll('.kcol.over').forEach(node => node !== column && node.classList.remove('over'));
+  column.classList.add('over');
+});
+document.addEventListener('drop', async event => {
+  const column = event.target.closest?.('[data-column]');
+  if (!column || !dragging) return;
+  event.preventDefault();
+  const task = dragging;
+  dragging = null;
+  if (column.dataset.column === 'merge') return toast('Esta coluna é preenchida pelo PR aprovado pelo QA. Sem PR, mova para Concluído.');
+  try {
+    await api('move_task', { project: current, task, status: column.dataset.column });
+    await load();
+  } catch (error) { toast(error.message); }
+  render();
+});
+
 document.addEventListener('change', async event => {
+  if (event.target.dataset.board) {
+    boardFilter[event.target.dataset.board] = event.target.value;
+    render();
+    return;
+  }
   if (event.target.dataset.overview) {
     overviewFilter[event.target.dataset.overview] = event.target.value;
     if (event.target.dataset.overview === 'project') overviewFilter.repo = '';
@@ -985,11 +1086,12 @@ document.addEventListener('submit', async event => {
     else {
       const actions = {
         project: 'create_project', config: 'settings', repo: 'add_repo', task: 'add_task', link: 'attach_pr', official: 'official_repo',
-        entry: 'add_context_entry', plansource: 'plan_source',
+        entry: 'add_context_entry', plansource: 'plan_source', importplan: 'import_plan',
         plan: 'save_plan', sprint: 'save_sprint', assign: 'assign_sprint', cut: 'cut_release',
         cost: 'record_cost', limits: 'save_usage_limits'
       };
       const args = { ...values, project: current };
+      let toastAfter = '';
       if (modal.type === 'project' || modal.type === 'config') args.profile = Object.fromEntries(Object.keys(roles).map(role => [
         role, Object.fromEntries(['agent', 'model', 'effort', 'login'].map(key => [key, values[role + '-' + key]]))
       ]));
@@ -1015,12 +1117,16 @@ document.addEventListener('submit', async event => {
         }
       }
       const result = await api(actions[modal.type], args);
-      if (modal.type === 'project') { current = result.id; view = 'pipeline'; search = ''; filter = ''; }
+      if (modal.type === 'project') { current = result.id; view = 'board'; search = ''; filter = ''; }
+      if (modal.type === 'importplan') {
+        toastAfter = result.created + ' cards criados, ' + result.updated + ' atualizados' +
+          result.repos.filter(repo => repo.error).map(repo => ' · ' + repo.repo.split('/')[1] + ': ' + repo.error).join('');
+      }
       if (modal.type === 'repo') prHistories.delete(args.project);
       if (['repo', 'official'].includes(modal.type)) contextAudit = null;
       if (modal.type === 'plansource') repoPlans.delete(args.project);
       $('#dialog').close();
-      toast('Alteração salva.');
+      toast(toastAfter || 'Alteração salva.');
     }
     await load();
     if (modal?.type === 'limits' && formId === 'modal') usageLimits = await api('usage_limits', {});
@@ -1035,9 +1141,15 @@ try {
   await load();
   usageLimits = await api('usage_limits', {});
 } catch (error) { toast(error.message); }
+// Link direto: http://127.0.0.1:47621/#id-do-projeto/board
+const [linkedProject, linkedView] = decodeURIComponent(location.hash.slice(1)).split('/');
+if (workspace.some(item => item.id === linkedProject)) {
+  current = linkedProject;
+  view = Object.hasOwn(views, linkedView) ? linkedView : 'board';
+}
 render();
 setInterval(async () => {
-  if (syncBusy || queryingCodex || $('#dialog').open || document.activeElement?.matches('input, select, textarea')) return;
+  if (dragging || syncBusy || queryingCodex || $('#dialog').open || document.activeElement?.matches('input, select, textarea')) return;
   try {
     const visibleData = () => ['usage', 'overview'].includes(view) ? { workspace, usageLimits } :
       ['pipeline', 'settings'].includes(view) || (view === 'repos' && repoScope === 'all') ? workspace : project();

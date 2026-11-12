@@ -133,6 +133,18 @@ td:nth-child(2){width:36%}
 .entry-filters .repo-scope{margin:0}
 .entry-filters .button{margin-left:auto}
 .plan-doc{max-height:60vh;overflow:auto;background:#101622;border:1px solid var(--line);border-radius:9px;padding:12px 14px;font-size:12px}
+.kanban{display:grid;grid-template-columns:repeat(6,minmax(205px,1fr));gap:10px;overflow-x:auto;align-items:start;padding-bottom:10px}
+.kcol{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
+.kcol.over{border-color:var(--teal);box-shadow:0 0 0 2px #27625e inset}
+.kcol header{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 12px;border-bottom:1px solid var(--line);position:sticky;top:0}
+.kcards{display:grid;gap:8px;padding:10px;max-height:70vh;overflow-y:auto}
+.kcard{background:#101622;border:1px solid var(--line);border-radius:9px;padding:10px 11px}
+.kcard.manual{border-style:dashed;cursor:grab}
+.kcard.manual:active{cursor:grabbing}
+.kcard .task-button{font-size:12px}
+.kflags{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.kflags .badge{white-space:normal;font-size:10px}
+.kempty{color:var(--muted);font-size:11px;text-align:center;padding:14px 0}
 .entry-help{margin:12px 0 14px}
 .entry h3{margin-top:6px}
 .entry.ended{opacity:.62}

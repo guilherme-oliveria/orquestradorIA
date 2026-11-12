@@ -1,7 +1,11 @@
 # Changelog
 
-## 1.0.1 — não publicada
+## 1.1.0 — não publicada
 
+- **Kanban por projeto**: colunas A fazer, Em desenvolvimento, Code review, Em teste, Aguardando seu merge e Concluído. Card com PR anda sozinho pelo estado do PR; card sem PR é arrastado no quadro ou movido com `mover_tarefa`.
+- **Importação do plano de ação**: cria os cards a partir do `plano-de-acao.md` de cada repositório, com fases, dependências e tarefas já concluídas (`importar_plano` no MCP).
+- PR com o ID da tarefa no título é ligado ao card existente em vez de criar outro.
+- Link direto para a tela de um projeto (`#id-do-projeto/board`).
 - PRs abertos para a `develop` entram no pipeline automaticamente, sem tarefa criada nem chamada ao MCP.
 - Veredito do QA sem SHA (`QA: APROVADO`, `QA: CORRIGIR`) e `QA: PRONTO PARA REVISAR` passam a ser reconhecidos.
 - Branches `claude/`, `codex/` e `copilot/` aceitas nos PRs.
