@@ -68,3 +68,22 @@ test('coordinates two repos, concurrent claims, chat and commit-specific QA', as
   pr = { ...pr, state: 'MERGED', comments: [{ author: { login: 'qa-user' }, body: 'QA: APROVADO ' + newHead }] };
   assert.equal((await action('claim', { project, role: 'dev' }, 'claude')).id, 'WEB-01');
 });
+
+test('quick presets swap Dev and QA and the automatic mode picks the agent with more quota', async t => {
+  const store = createStore(':memory:');
+  t.after(store.close);
+  const { action } = createService(store, {});
+  const project = 'preset';
+  await action('create_project', { id: project, name: 'Preset', profile });
+  await action('add_repo', { project, slug: 'time/api', kind: 'Backend' });
+  await assert.rejects(action('quick_profile', { project, preset: 'swap' }, 'claude'), /painel/);
+  const swapped = await action('quick_profile', { project, preset: 'swap' });
+  assert.deepEqual([swapped.profile.dev.agent, swapped.profile.qa.agent, swapped.profile.qa.login], ['codex', 'claude', 'qa-user']);
+  await action('quick_profile', { project, preset: 'auto' });
+  const future = new Date(Date.now() + 3_600_000).toISOString();
+  await action('save_usage_limits', { provider: 'codex', windows: { fiveHours: { used: 90, resetsAt: future } } });
+  await action('save_usage_limits', { provider: 'claude', windows: { fiveHours: { used: 20, resetsAt: future } } });
+  const task = await action('add_task', { project, task: 'API-01', title: 'API', repo: 'time/api' });
+  assert.deepEqual([task.dev, task.qa, task.profile.qa.login], ['claude', 'codex', 'qa-user']);
+  assert.equal((await action('workspace', {})).projects[0].autoAssign, true);
+});

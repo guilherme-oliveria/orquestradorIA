@@ -154,6 +154,12 @@ O arquivo versionado nos repositórios passa a ser um **snapshot gerado**: **Bai
 
 Na tela **Repositórios**, cada cartão mostra a área e o nome do projeto. Use **Todos os projetos** para ver os repositórios cadastrados em uma única lista. O botão **+ Repositório** cadastra no projeto selecionado na barra lateral.
 
+### Visão geral
+
+O painel abre na **Visão geral**, que reúne todos os projetos. A linha do topo diz quantos PRs esperam o seu merge e quantos agentes estão trabalhando. Cada agente tem um cartão com o estado (Livre ou Ocupado, com a tarefa reservada) e o uso das janelas de cota já lidas em **Custos e limites**. Abaixo, cada projeto lista seus cards no trilho Fila → Desenvolvimento → PR → Revisão → Testes → Aprovação → Seu merge. O laço "N correções" conta quantas vezes o QA pediu correção naquele PR (reviews com mudanças solicitadas e comentários `QA: CORRIGIR`). Filtre por projeto, repositório, agente e etapa. Clicar num card abre os detalhes, com o link do PR, as pendências da última revisão e o último registro do agente.
+
+**Próximos cards** troca rapidamente quem desenvolve e quem revisa as tarefas novas do projeto. As tarefas já criadas mantêm o perfil que tinham. No modo **Automático**, cada tarefa nova vai para o agente, entre Dev e QA do projeto, com menor uso na janela de 5 horas; sem leitura válida de cota para os dois, vale a configuração do projeto.
+
 ### Da fila ao merge
 
 - O **PO** lê o contexto e registra tarefas com critérios de aceite.
