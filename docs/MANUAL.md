@@ -168,6 +168,19 @@ O arquivo versionado nos repositórios passa a ser um **snapshot gerado**: **Bai
 
 Na tela **Repositórios**, cada cartão mostra a área e o nome do projeto. Use **Todos os projetos** para ver os repositórios cadastrados em uma única lista. O botão **+ Repositório** cadastra no projeto selecionado na barra lateral.
 
+### Acompanhamento automático dos PRs
+
+O painel não depende de o agente avisar. A cada minuto (ou em **Sincronizar GitHub**) ele lista os PRs abertos para a `develop` de cada repositório cadastrado e cria o card de qualquer PR que ainda não esteja vinculado a uma tarefa. O ID do card vem do início do título do PR (`MOB-UX-04 Desfazer…` vira `MOB-UX-04`); sem ID no título, usa a área e o número (`MOBILE-PR126`). Entram PRs de branches `feature/`, `bugfix/` e das branches que os ambientes dos agentes nomeiam (`claude/`, `codex/`, `copilot/`). PRs do Dependabot ficam só no histórico.
+
+O veredito do QA é lido dos comentários do login configurado para o QA. Valem as duas formas na primeira linha do comentário:
+
+- `QA: APROVADO <sha completo>` ou `QA: CORRIGIR <sha completo>`: vale para aquele commit.
+- `QA: APROVADO` ou `QA: CORRIGIR` sem SHA: vale enquanto não houver commit depois do comentário.
+
+`QA: PRONTO PARA REVISAR`, comentado pelo autor do PR ou pelo QA, devolve o card para "Em revisão". Um commit novo também invalida o veredito anterior.
+
+Em **Planejamento → Plano no repositório**, aponte para o Markdown do plano que o PO mantém no Git (ex.: `docs/arquitetura/plano-de-execucao.md`). O painel mostra a versão da `develop` e os agentes recebem o mesmo texto em `ler_planejamento`.
+
 ### Visão geral
 
 O painel abre na **Visão geral**, que reúne todos os projetos. A linha do topo diz quantos PRs esperam o seu merge e quantos agentes estão trabalhando. Cada agente tem um cartão com o estado (Livre ou Ocupado, com a tarefa reservada) e o uso das janelas de cota já lidas em **Custos e limites**. Abaixo, cada projeto lista seus cards no trilho Fila → Desenvolvimento → PR → Revisão → Testes → Aprovação → Seu merge. O laço "N correções" conta quantas vezes o QA pediu correção naquele PR (reviews com mudanças solicitadas e comentários `QA: CORRIGIR`). Filtre por projeto, repositório, agente e etapa. Clicar num card abre os detalhes, com o link do PR, as pendências da última revisão e o último registro do agente.

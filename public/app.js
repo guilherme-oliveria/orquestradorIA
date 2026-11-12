@@ -39,6 +39,7 @@ let timer;
 let search = '';
 let filter = '';
 const prHistories = new Map();
+const repoPlans = new Map();
 const historyPageSize = 25;
 let historyRowsShown = historyPageSize;
 let repoScope = 'current';
@@ -434,12 +435,40 @@ async function refreshMcpChecks() {
   }
 }
 
+async function loadRepoPlan(id) {
+  const loading = { loading: true };
+  repoPlans.set(id, loading);
+  let result;
+  try {
+    result = { plan: (await api('planning', { project: id })).repoPlan };
+  } catch (error) {
+    result = { plan: { error: error.message } };
+  }
+  if (repoPlans.get(id) !== loading) return;
+  repoPlans.set(id, result);
+  if (view === 'planning' && current === id) render();
+}
+
+function repoPlanCard(p) {
+  const source = p.planSource;
+  if (source && !repoPlans.has(p.id)) void loadRepoPlan(p.id);
+  const state = repoPlans.get(p.id);
+  const body = !source ? '<p class="muted">Aponte para o Markdown do plano que o PO mantém no repositório (ex.: <code>docs/arquitetura/plano-de-execucao.md</code>). O painel lê a versão da <code>develop</code>.</p>' :
+    !state || state.loading ? '<p class="muted">Lendo o plano no GitHub…</p>' :
+    state.plan?.error ? '<p class="modal-error">' + esc(state.plan.error) + '</p>' :
+    '<small>' + esc(source.repo) + ' · <code>' + esc(source.path) + '</code> · develop em <code>' + esc(state.plan.sha.slice(0, 7)) +
+      '</code></small><div class="pre plan-doc">' + esc(state.plan.markdown) + '</div>';
+  return '<section class="card"><div class="section-head"><h2>Plano no repositório</h2><div class="actions">' +
+    (source ? btn('Recarregar', 'reload-plan', 'ghost') : '') + btn(source ? 'Trocar arquivo' : 'Definir arquivo', 'plansource', 'ghost') +
+    '</div></div>' + body + '</section>';
+}
+
 function planning(p) {
   const plan = p.plan;
   const editPlan = btn(plan ? 'Editar plano' : 'Criar plano', 'plan', 'ghost');
   const planCard = '<section class="card"><div class="section-head"><h2>Plano de execução do PO</h2>' + editPlan +
     '</div>' + (plan ? '<small>Atualizado por ' + esc(names[plan.author]) + ' · ' + esc(time(plan.updatedAt)) +
-    '</small><div class="pre">' + esc(plan.markdown) + '</div>' : '<p class="muted">O plano em Markdown aparece aqui quando o PO ou o dono do projeto o publicar.</p>') +
+    '</small><div class="pre">' + esc(plan.markdown) + '</div>' : '<p class="muted">Plano publicado pelo PO com a ferramenta salvar_plano do MCP, ou escrito aqui por você. Fica vazio quando o PO mantém o plano só no repositório.</p>') +
     '</section>';
   const sprintCards = (p.sprints || []).map(sprint => {
     const tasks = p.tasks.filter(task => task.sprint === sprint.id);
@@ -459,7 +488,7 @@ function planning(p) {
     release.tasks.map(task => '<div>' + esc(task.id) + ' · ' + esc(task.repo) + (task.pr ? ' · PR #' + task.pr : '') + '</div>').join('') +
     '</div></details>'
   ).join('');
-  return '<div class="project-sections">' + planCard + '<section><div class="section-head"><h2>Sprints</h2>' +
+  return '<div class="project-sections">' + repoPlanCard(p) + planCard + '<section><div class="section-head"><h2>Sprints</h2>' +
     btn('Nova sprint', 'sprint', 'ghost') + '</div>' +
     (sprintCards ? '<div class="repos">' + sprintCards + '</div>' : '<p class="panel empty">Nenhuma sprint cadastrada.</p>') +
     '</section><section><div class="section-head"><h2>Cortes de release</h2>' +
@@ -684,6 +713,13 @@ function open(type, id) {
     '<p class="muted">A sprint precisa ter todas as tarefas com merge validado. O corte registra os commits da develop para revisão.</p>');
   if (type === 'config') showModal(type, 'Papéis, modelos e contexto',
     profileFields(p.profile) + area('Contexto em Markdown', 'context', p.context, 'maxlength="12000"'));
+  if (type === 'plansource') {
+    if (!p.repos.length) return toast('Cadastre um repositório para escolher o arquivo do plano.');
+    showModal(type, 'Plano no repositório',
+      '<label>Repositório<select name="repo">' + options(Object.fromEntries(p.repos.map(repo => [repo.slug, repo.slug])), p.planSource?.repo) +
+      '</select></label>' + textField('Caminho do Markdown no Git', 'path', p.planSource?.path || 'docs/arquitetura/plano-de-execucao.md', 'required maxlength="160"') +
+      '<p class="muted">O painel mostra o conteúdo desse arquivo na develop. Os agentes recebem o mesmo texto em ler_planejamento.</p>');
+  }
   if (type === 'official') {
     if (!p.repos.length) return toast('Cadastre um repositório para escolher a fonte oficial.');
     showModal(type, 'Fonte oficial de contexto',
@@ -765,6 +801,7 @@ document.addEventListener('click', async event => {
     render();
   } else if (action === 'close') $('#dialog').close();
   else if (action === 'supersede') open('entry', id);
+  else if (action === 'reload-plan') { repoPlans.delete(current); render(); }
   else if (action === 'retire-entry') {
     if (!confirm('Encerrar a entrada ' + id + '? Ela some do Markdown gerado e dos agentes.')) return;
     button.disabled = true;
@@ -948,7 +985,7 @@ document.addEventListener('submit', async event => {
     else {
       const actions = {
         project: 'create_project', config: 'settings', repo: 'add_repo', task: 'add_task', link: 'attach_pr', official: 'official_repo',
-        entry: 'add_context_entry',
+        entry: 'add_context_entry', plansource: 'plan_source',
         plan: 'save_plan', sprint: 'save_sprint', assign: 'assign_sprint', cut: 'cut_release',
         cost: 'record_cost', limits: 'save_usage_limits'
       };
@@ -981,6 +1018,7 @@ document.addEventListener('submit', async event => {
       if (modal.type === 'project') { current = result.id; view = 'pipeline'; search = ''; filter = ''; }
       if (modal.type === 'repo') prHistories.delete(args.project);
       if (['repo', 'official'].includes(modal.type)) contextAudit = null;
+      if (modal.type === 'plansource') repoPlans.delete(args.project);
       $('#dialog').close();
       toast('Alteração salva.');
     }

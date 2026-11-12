@@ -87,3 +87,39 @@ test('quick presets swap Dev and QA and the automatic mode picks the agent with 
   assert.deepEqual([task.dev, task.qa, task.profile.qa.login], ['claude', 'codex', 'qa-user']);
   assert.equal((await action('workspace', {})).projects[0].autoAssign, true);
 });
+
+test('open PRs to develop enter the pipeline on their own and the plan can be read from the repository', async t => {
+  const store = createStore(':memory:');
+  t.after(store.close);
+  const base = { baseRefName: 'develop', state: 'OPEN', headRefOid: head, author: { login: 'qa-user' },
+    statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }], reviews: [],
+    commits: [{ oid: head, committedDate: '2026-11-12T23:20:00Z' }] };
+  const prs = {
+    125: { ...base, number: 125, url: 'https://github.com/time/app/pull/125', title: 'MOB-UX-04 Desfazer o registro', headRefName: 'claude/project-thread-5tgkym',
+      comments: [{ author: { login: 'qa-user' }, body: 'QA: CORRIGIR', createdAt: '2026-11-12T23:28:00Z' }] },
+    126: { ...base, number: 126, url: 'https://github.com/time/app/pull/126', title: 'Ajusta textos', headRefName: 'feature/textos', comments: [] },
+    127: { ...base, number: 127, url: 'https://github.com/time/app/pull/127', title: 'Bump lib', headRefName: 'dependabot/x', comments: [] }
+  };
+  const github = {
+    listOpenPrs: async () => Object.values(prs).map(({ number, title, headRefName }) => ({ number, title, headRefName })),
+    readPr: async (slug, number) => prs[number],
+    readMarkdown: async (repo, path) => ({ repo, path, sha: head, markdown: '# Plano do repositório' })
+  };
+  const { action } = createService(store, github);
+  const project = 'auto';
+  await action('create_project', { id: project, name: 'Auto', profile });
+  await action('add_repo', { project, slug: 'time/app', kind: 'Mobile' });
+  await action('refresh', {});
+  await action('refresh', {});
+  const tasks = (await action('workspace', {})).projects[0].tasks;
+  assert.deepEqual(tasks.map(task => [task.id, task.pr, task.observation.stage, task.imported]),
+    [['MOB-UX-04', 125, 'changes', true], ['MOBILE-PR126', 126, 'review', true]]);
+  assert.equal(tasks[0].title, 'Desfazer o registro');
+  assert.equal(tasks[0].observation.corrections, 1);
+  assert.equal((await action('planning', { project }, 'claude')).repoPlan, null);
+  await assert.rejects(action('plan_source', { project, repo: 'time/outro', path: 'docs/plano.md' }), /repositório cadastrado/);
+  await action('plan_source', { project, repo: 'time/app', path: 'docs/arquitetura/plano-de-execucao.md' });
+  const planning = await action('planning', { project }, 'claude');
+  assert.equal(planning.repoPlan.markdown, '# Plano do repositório');
+  assert.equal(planning.planSource.path, 'docs/arquitetura/plano-de-execucao.md');
+});

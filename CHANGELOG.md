@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 — não publicada
+
+- PRs abertos para a `develop` entram no pipeline automaticamente, sem tarefa criada nem chamada ao MCP.
+- Veredito do QA sem SHA (`QA: APROVADO`, `QA: CORRIGIR`) e `QA: PRONTO PARA REVISAR` passam a ser reconhecidos.
+- Branches `claude/`, `codex/` e `copilot/` aceitas nos PRs.
+- Planejamento mostra o Markdown do plano versionado no repositório.
+
 ## 1.0.0 — 2026-11-12
 
 Primeira versão publicada do Orquestrador IA: painel local que coordena Claude Code, Codex e outros agentes em vários repositórios do mesmo produto, com Gitflow e merge humano.

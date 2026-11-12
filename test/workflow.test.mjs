@@ -72,3 +72,20 @@ test('counts QA correction rounds across commits and exposes the pending request
   assert.equal(profileForNewTask({ profile, autoAssign: true }, limits).dev.agent, 'codex');
   assert.equal(profileForNewTask({ profile, autoAssign: true }, { claude: limits.claude }).dev.agent, 'claude');
 });
+
+test('accepts the SHA-less QA protocol while no commit follows the comment, and agent branches', () => {
+  const at = minute => '2026-11-12T23:' + minute + ':00Z';
+  const withCommit = (minute, comments) => evaluate({ ...pr, headRefName: 'claude/project-thread-5tgkym',
+    commits: [{ oid: head, committedDate: at(minute) }], comments }, repo, 'qa');
+  const say = (body, minute, login = 'qa') => ({ body, author: { login }, createdAt: at(minute) });
+  validatePr({ ...pr, headRefName: 'claude/project-thread-5tgkym' }, repo, 3);
+  assert.throws(() => validatePr({ ...pr, headRefName: 'dependabot/gradle/x' }, repo, 3), /feature\/ ou bugfix\//);
+  assert.equal(withCommit('20', [say('QA: CORRIGIR\n- teste falhando', '28')]).stage, 'changes');
+  const ready = withCommit('20', [say('QA: CORRIGIR', '28'), say('QA: PRONTO PARA REVISAR', '29', 'dev')]);
+  assert.deepEqual([ready.stage, ready.corrections, ready.pending], ['review', 1, null]);
+  assert.equal(withCommit('20', [say('QA: CORRIGIR', '28'), say('QA: PRONTO PARA REVISAR', '29', 'outro')]).stage, 'changes');
+  assert.equal(withCommit('20', [say('QA: APROVADO', '30')]).stage, 'merge');
+  assert.equal(withCommit('31', [say('QA: APROVADO', '30')]).stage, 'review');
+  assert.equal(evaluate({ ...pr, comments: [say('QA: APROVADO', '30')] }, repo, 'qa').stage, 'review');
+  assert.equal(withCommit('20', [say('QA: APROVADOS todos', '30')]).stage, 'review');
+});
