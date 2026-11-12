@@ -132,6 +132,7 @@ td:nth-child(2){width:36%}
 .entry-filters{gap:12px 22px;align-items:center;justify-content:flex-start}
 .entry-filters .repo-scope{margin:0}
 .entry-filters .button{margin-left:auto}
+.plan-doc{max-height:60vh;overflow:auto;background:#101622;border:1px solid var(--line);border-radius:9px;padding:12px 14px;font-size:12px}
 .entry-help{margin:12px 0 14px}
 .entry h3{margin-top:6px}
 .entry.ended{opacity:.62}
