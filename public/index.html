@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d111a">
+  <title>Orquestrador IA</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><div>Orquestrador<span class="brand-ia"> IA</span><small>ESPAÇO DE TRABALHO</small></div></div>
+      <nav aria-label="Visão geral">
+        <button id="overview-nav" class="nav-item" data-action="navigate" data-id="overview"><span class="nav-icon">◎</span><span>Visão geral</span></button>
+      </nav>
+      <div class="side-heading nav-heading">PROJETOS <button class="icon-button" data-action="project" title="Novo projeto" aria-label="Novo projeto">+</button></div>
+      <nav id="projects" aria-label="Projetos"></nav>
+      <div class="side-heading nav-heading">PROJETO ATUAL</div>
+      <nav id="nav" aria-label="Páginas"></nav>
+      <div class="side-heading nav-heading">ESPAÇO DE TRABALHO</div>
+      <nav aria-label="Configuração do espaço de trabalho">
+        <button id="connections-nav" class="nav-item" data-action="navigate" data-id="connections"><span class="nav-icon">⚙</span><span>Configurações</span></button>
+      </nav>
+      <div class="side-bottom"><span class="dot"></span><div>Instância local<small>GitHub · MCP Desktop</small></div></div>
+    </aside>
+    <main>
+      <header class="top"><div id="breadcrumb">Espaço de trabalho</div><button id="sync" data-action="sync" class="button ghost">↻ &nbsp; Sincronizar GitHub</button></header>
+      <div id="view" class="content"></div>
+    </main>
+  </div>
+  <dialog id="dialog"><form id="modal" method="post"></form></dialog>
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>
