@@ -107,6 +107,20 @@ Para testar, peça na sessão de cada agente “Use o MCP `orquestradoria` para 
 
 Em **Configurações → Conexões**, use **Testar CLI** para verificar se o executável está acessível no ambiente do painel. Claude e Codex também mostram se o CLI encontrou um login local. Para validar o caminho MCP, use **Copiar teste MCP**, cole na sessão que quer testar e clique em **Atualizar testes MCP** no painel. O horário exibido é o do último teste bem-sucedido do agente. OpenCode aparece no diagnóstico de CLI.
 
+### Adicionar um novo tipo de agente
+
+Os agentes ficam em um único registro, `lib/agents.mjs`. Uma entrada define o rótulo, o comando do CLI (com o teste de login, se houver), o comando de registro do MCP e se a conta informa janelas de limite. Com a entrada criada, o agente aparece na escolha de papéis, nos destinatários do chat, em **Configurações → Conexões** (teste de CLI, teste MCP e comando de registro pronto para copiar) e passa a ser aceito como identidade do conector (`node mcp.mjs <id>`). Um agente sem `mcp` aparece só no diagnóstico de CLI.
+
+```js
+'meu-agente': {
+  label: 'Meu Agente',
+  cli: { command: 'meuagente', auth: { args: ['login', 'status'], format: 'exit-code' } },
+  mcp: { register: 'meuagente mcp add orquestradoria -- {node} {mcp} meu-agente' }
+}
+```
+
+Reinicie o painel e os conectores depois de editar o registro.
+
 ### OpenCode
 
 No OpenCode, use `/connect` para autenticar o provedor e `/models` para escolher o modelo disponível. A documentação do cliente lista as opções de login, como assinatura elegível do ChatGPT quando oferecida, ou chave API do provedor. Para modelos Anthropic no OpenCode, siga o fluxo oficial com chave do Claude Console. OpenCode suporta servidores MCP locais, mas o Orquestrador ainda não tem identidade `opencode` para atribuir papéis, tarefas ou mensagens ao cliente. Ele pode ser usado de forma independente para trabalhar nos mesmos repositórios. [Provedores do OpenCode](https://opencode.ai/docs/providers/) · [MCP no OpenCode](https://opencode.ai/docs/mcp-servers/)
@@ -146,7 +160,7 @@ O painel é a fonte viva do contexto que atravessa os repositórios. Cada entrad
 | Contrato | `CON-NN` | PO e Dev | Endpoints, DTOs, eventos e códigos de erro entre API, web e mobile |
 | Nota | `NOT-NN` | Qualquer papel, inclusive o QA | Andamento, riscos e pendências visíveis aos outros repositórios |
 
-Uma entrada nunca é editada: para mudar, registre outra com **Substituir** (ou `substitui` no MCP), e a anterior fica marcada como substituída. **Encerrar** retira uma entrada sem substituta; só o autor ou o PO fazem isso.
+Uma entrada nunca é editada: para mudar, registre outra com **Substituir** (ou `supersedes` no MCP), e a anterior fica marcada como substituída. **Encerrar** retira uma entrada sem substituta; só o autor ou o PO fazem isso.
 
 Pelo MCP, os agentes usam `listar_contexto` (filtro por `repo` e `type`, rápido, sem GitHub), `contexto` (traz as entradas do repositório junto com o Markdown oficial e as referências), `registrar_decisao`, `registrar_contrato`, `registrar_nota` e `encerrar_contexto`. A instrução da sessão já pede para ler `listar_contexto` antes de implementar e registrar o que afeta outros repositórios.
 
@@ -167,7 +181,7 @@ O painel abre na **Visão geral**, que reúne todos os projetos. A linha do topo
 - O **QA** revisa o SHA atual e registra o resultado. Uma review formal exige uma conta GitHub diferente da conta que abriu o PR. Se ambos usam a mesma conta, o painel aceita um comentário novo do login configurado para o QA, com `QA: APROVADO <sha completo>` ou `QA: CORRIGIR <sha completo>` na primeira linha. Esse veredito informa o painel. As exigências de aprovação do GitHub continuam valendo. [Revisões obrigatórias no GitHub](https://docs.github.com/en/pull-requests/how-tos/review-pull-requests/approving-a-pull-request-with-required-reviews)
 - O **dono** faz o merge no GitHub. O painel libera as dependências após verificar merge, QA e CI. Se houver um novo push, o QA precisa revisar o novo SHA.
 
-Para usar agendamentos, abra **Papéis e contexto → Copiar instruções da sessão** e inclua o texto no agendamento existente. Teste primeiro a sessão local. A execução agendada precisa alcançar o MCP e o painel. Uma execução inteiramente na nuvem não alcança o `127.0.0.1` desta máquina. Modelo e esforço são preferências salvas na tarefa. Configure o modelo efetivo no cliente que roda a sessão.
+Para usar agendamentos, abra **Papéis e contexto → Instruções por papel**, copie o texto do PO, do Dev ou do QA e inclua no agendamento do agente que ocupa aquele papel. O texto é gerado a partir dos papéis, repositórios, checks e regras do projeto, então muda sozinho quando você troca quem faz cada papel; copie de novo depois de uma troca. O agente também obtém o mesmo texto com a ferramenta `instrucoes_do_papel`. Teste primeiro a sessão local. A execução agendada precisa alcançar o MCP e o painel. Uma execução inteiramente na nuvem não alcança o `127.0.0.1` desta máquina. Modelo e esforço são preferências salvas na tarefa. Configure o modelo efetivo no cliente que roda a sessão.
 
 Em **Agentes e papéis**, o painel mostra o modelo e o esforço configurados. **Ocupado** indica uma reserva ativa, inclusive quando a tarefa é de outro projeto do painel. **Livre** indica que o Dev ou QA está sem reserva ativa. A cota do provedor e sessões externas são consultadas no cliente de cada agente.
 
