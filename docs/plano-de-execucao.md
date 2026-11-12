@@ -143,6 +143,13 @@ A release é aberta e aprovada pelo Guilherme (`release/X.Y.Z` → `main`).
   Faz: Configurações → Conexões lê os testes do registro (CLI, login, MCP) e mostra o comando de registro do MCP pronto para copiar, com o caminho do WSL.
   Pronto quando: o cartão de cada agente mostra versão, login e último teste MCP a partir do registro.
 
+### Depois do MVP — ajustes do primeiro uso real (2026-11-12)
+
+- [x] **ORQ-15 Painel observa o GitHub** (PR #10)
+  Faz: PRs abertos para a develop viram cards sozinhos; veredito do QA sem SHA; branches `claude/` e `codex/`; plano lido do repositório.
+- [x] **ORQ-16 Kanban alimentado pelo plano de ação**
+  Faz: quadro em colunas por projeto; importação do `plano-de-acao.md` de cada repositório; card sem PR arrastável, card com PR segue o GitHub; PR ligado ao card pelo ID no título.
+
 ### Onda 4 — MVP futuro (adiado)
 
 > Decisão de 2026-11-12: não fazer agora. O fluxo segue como está: os pedidos e as sessões continuam no Claude Desktop e no Codex Desktop, e o painel organiza e mostra o andamento. Reavaliar depois de usar o MVP com o Dieta+, se manter sessão aberta ou agendamento configurado virar incômodo.
