@@ -57,9 +57,9 @@ Cada onda cabe em 1 a 2 sessões de trabalho. A onda seguinte começa depois do 
 
 | Marco | Versão | O que o Guilherme consegue fazer | Como conferir |
 | --- | --- | --- | --- |
-| M1 | 0.2.0 | Usar o painel no WSL com os Desktops e registrar/ler decisões e contratos entre repos pelo MCP | Onda 1 integrada; `node --test` verde |
-| M2 (MVP) | 0.3.0 | Ver todos os projetos num painel só, no layout da imagem, e trocar/adicionar agentes sem editar o guia | Onda 3 integrada |
-| M3 (futuro) | 0.4.0 | Agentes disparados pelo painel via CLI, sem agendamento manual nos Desktops | Onda 4, adiada |
+| M1 | incluído na 1.0.0 | Usar o painel no WSL com os Desktops e registrar/ler decisões e contratos entre repos pelo MCP | Onda 1 integrada; `node --test` verde |
+| M2 (MVP) | 1.0.0 | Ver todos os projetos num painel só, no layout da imagem, e trocar/adicionar agentes sem editar o guia | Onda 3 integrada |
+| M3 (futuro) | 1.1.0 | Agentes disparados pelo painel via CLI, sem agendamento manual nos Desktops | Onda 4, adiada |
 
 A release é aberta e aprovada pelo Guilherme (`release/X.Y.Z` → `main`).
 
