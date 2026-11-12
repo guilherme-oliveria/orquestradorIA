@@ -44,3 +44,31 @@ test('the linked PR must belong to the task repository and follow Gitflow', () =
   assert.throws(() => validatePr({ ...pr, baseRefName: 'main' }, repo, 3));
   assert.throws(() => validatePr({ ...pr, url: 'https://github.com/time/web/pull/3' }, repo, 3));
 });
+
+test('counts QA correction rounds across commits and exposes the pending request', async () => {
+  const { profileForNewTask, swapDevQa } = await import('../lib/workflow.mjs');
+  const old = 'c'.repeat(40);
+  const rounds = [
+    { ...verdict('QA: CORRIGIR ' + old + '\n- falta teste'), createdAt: '2026-11-06T09:00:00Z' },
+    { ...verdict('QA: CORRIGIR ' + head + '\n- ajustar erro 422'), createdAt: '2026-11-06T12:00:00Z' },
+    { ...verdict('QA: CORRIGIR ' + head, 'dev'), createdAt: '2026-11-06T12:30:00Z' }
+  ];
+  const changes = evaluate({ ...pr, comments: rounds }, repo, 'qa');
+  assert.equal(changes.stage, 'changes');
+  assert.equal(changes.corrections, 2);
+  assert.match(changes.pending, /ajustar erro 422/);
+  const approved = evaluate({ ...pr, comments: [...rounds,
+    { ...verdict('QA: APROVADO ' + head), createdAt: '2026-11-06T13:00:00Z' }] }, repo, 'qa');
+  assert.equal(approved.stage, 'merge');
+  assert.equal(approved.corrections, 2);
+  assert.equal(approved.pending, null);
+
+  const profile = { po: { agent: 'claude' }, dev: { agent: 'claude', model: 'a', login: '' }, qa: { agent: 'codex', model: 'b', login: 'qa' } };
+  const swapped = swapDevQa(profile);
+  assert.deepEqual([swapped.dev.agent, swapped.dev.model, swapped.qa.agent, swapped.qa.login], ['codex', 'b', 'claude', 'qa']);
+  const future = new Date(Date.now() + 3_600_000).toISOString();
+  const limits = { claude: { windows: { fiveHours: { used: 80, resetsAt: future } } }, codex: { windows: { fiveHours: { used: 10, resetsAt: future } } } };
+  assert.equal(profileForNewTask({ profile }, limits).dev.agent, 'claude');
+  assert.equal(profileForNewTask({ profile, autoAssign: true }, limits).dev.agent, 'codex');
+  assert.equal(profileForNewTask({ profile, autoAssign: true }, { claude: limits.claude }).dev.agent, 'claude');
+});

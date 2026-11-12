@@ -1,7 +1,7 @@
 # Orquestrador IA — plano de execução (MVP 2)
 
 > Criado em 2026-11-10 a partir do guia `gui-arquitetura claude-codex`, do código da `develop` (v0.1.0) e da imagem de referência do painel.
-> **Status: aprovado em 2026-11-10; onda 0 integrada (PR #3), onda 1 em andamento.**
+> **Status: aprovado em 2026-11-10; ondas 0 e 1 integradas (PRs #3 e #4), onda 2 em andamento.**
 
 A `develop` já entrega cadastro de projeto com N repositórios, papéis por agente (PO/Dev/QA → Claude/Codex/Gemini), leitura de contexto pelo MCP e pipeline de tarefas/PRs por projeto. Este plano **não reescreve nada**: migra o painel para o WSL, fecha as três lacunas dos problemas originais (contexto preso nos `.md`, visão única de todos os projetos, agentes plugáveis) e aproxima o painel da imagem de referência.
 
@@ -72,7 +72,7 @@ A release é aberta e aprovada pelo Guilherme (`release/X.Y.Z` → `main`).
   Faz: `iniciar-painel.sh` (carrega o nvm, valida Node ≥ 24 e `gh auth status`, sobe o painel); seção "WSL + Desktops no Windows" no `docs/MANUAL.md` com o comando `wsl.exe` para o MCP de cada Desktop; `.gitignore` revisado; este plano em `docs/plano-de-execucao.md`.
   Pronto quando: `bash iniciar-painel.sh` sobe o painel no WSL e o navegador do Windows abre `http://127.0.0.1:47621`; `node --test` verde.
 
-- [ ] **ORQ-02 Desktops conectados ao painel do WSL**
+- [x] **ORQ-02 Desktops conectados ao painel do WSL**
   Depende de: ORQ-01
   Faz: configurar `orquestradoria` no Codex Desktop (`config.toml`) e no Claude Desktop apontando para `wsl.exe -d Ubuntu-24.04 -- <node> <mcp.mjs> <agente>`; remover a entrada antiga `orquestradoria-2` (OneDrive); registrar também nos CLIs do WSL (`claude mcp add`, `codex mcp add`).
   Pronto quando: `testar_conexao` executado nas sessões do Claude Desktop e do Codex Desktop aparece em Configurações → Conexões; `preparar_worktree` cria uma worktree num repo em `/mnt/c/projetos`.
@@ -111,17 +111,17 @@ A release é aberta e aprovada pelo Guilherme (`release/X.Y.Z` → `main`).
 
 ### Onda 2 — visão geral (problema 3, imagem de referência)
 
-- [ ] **ORQ-07 Página inicial "Visão geral"**
+- [x] **ORQ-07 Página inicial "Visão geral"**
   Depende de: ORQ-01
   Faz: view padrão ao abrir o painel com todos os projetos: linha-resumo no topo ("N PRs esperando seu merge · M agentes trabalhando"), um bloco por projeto com repos, tarefas e PRs no mesmo trilho Fila → Desenvolvimento → PR → Revisão → Testes → Aprovação → Seu merge; filtros por projeto, repo, agente e etapa; clique abre o detalhe.
   Pronto quando: com dois projetos cadastrados, a página lista os dois e os filtros funcionam sem recarregar.
 
-- [ ] **ORQ-08 Cards como na imagem**
+- [x] **ORQ-08 Cards como na imagem**
   Depende de: ORQ-07
   Faz: contagem de correções por PR ("1 correção", "2 correções") calculada dos eventos `QA: CORRIGIR` e reviews CHANGES_REQUESTED (campo `observation.corrections`); texto de status à direita ("Rodando testes", "Aprovado, esperando seu merge", "Merge feito", "Cancelado") e quem desenvolve/revisa; detalhe do card com link do PR, pendências da revisão (último comentário `QA: CORRIGIR`) e último evento da execução.
   Pronto quando: um PR que passou por CORRIGIR → PRONTO PARA REVISAR → APROVADO mostra "1 correção" e o estágio certo.
 
-- [ ] **ORQ-09 Barra de agentes com cota**
+- [x] **ORQ-09 Barra de agentes com cota**
   Depende de: ORQ-07
   Faz: cabeçalho com um cartão por agente (Livre/Ocupado, tarefa atual, % da janela de 5 h e semanal já coletados em `usage.mjs`); preset rápido do projeto atual ("Claude desenvolve, Codex revisa" / inverso / automático) reaproveitando `settings`; "Automático" escolhe o Dev com mais cota livre na criação da tarefa.
   Pronto quando: trocar o preset altera o perfil das próximas tarefas e o modo automático escolhe o agente com menor uso registrado.

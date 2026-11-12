@@ -12,7 +12,10 @@
   <div class="layout">
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark" aria-hidden="true">◈</span><div>Orquestrador<span class="brand-ia"> IA</span><small>ESPAÇO DE TRABALHO</small></div></div>
-      <div class="side-heading">PROJETOS <button class="icon-button" data-action="project" title="Novo projeto" aria-label="Novo projeto">+</button></div>
+      <nav aria-label="Visão geral">
+        <button id="overview-nav" class="nav-item" data-action="navigate" data-id="overview"><span class="nav-icon">◎</span><span>Visão geral</span></button>
+      </nav>
+      <div class="side-heading nav-heading">PROJETOS <button class="icon-button" data-action="project" title="Novo projeto" aria-label="Novo projeto">+</button></div>
       <nav id="projects" aria-label="Projetos"></nav>
       <div class="side-heading nav-heading">PROJETO ATUAL</div>
       <nav id="nav" aria-label="Páginas"></nav>

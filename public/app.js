@@ -5,14 +5,14 @@ const efforts = { default: 'Padrão', low: 'Baixo', medium: 'Médio', high: 'Alt
 const stages = {
   queue: ['Na fila', '', 0], blocked: ['Aguardando dependência', 'amber', 0], dev: ['Em desenvolvimento', 'lav', 1],
   draft: ['PR em rascunho', 'lav', 2], review: ['Em revisão', 'lav', 3], changes: ['Correções solicitadas', 'amber', 3],
-  tests: ['Aguardando testes', 'teal', 4], merge: ['Aguardando seu merge', 'teal', 6], merged: ['Merge validado', 'teal', 7],
-  'merged-unverified': ['Merge sem validação', 'red', 6], closed: ['PR fechado', '', 2], error: ['Falha na sincronização', 'red', 2]
+  tests: ['Rodando testes', 'teal', 4], merge: ['Aprovado, esperando seu merge', 'teal', 6], merged: ['Merge feito', 'teal', 7],
+  'merged-unverified': ['Merge sem validação', 'red', 6], closed: ['Cancelado', '', 2], error: ['Falha na sincronização', 'red', 2]
 };
 const historyStages = {
   'github-open': ['Aberto no GitHub', 'lav'], 'github-draft': ['Rascunho no GitHub', 'lav'],
   'github-merged': ['Merge no GitHub', 'teal'], 'github-closed': ['Fechado no GitHub', '']
 };
-const milestones = ['Fila', 'Dev', 'PR', 'Revisão', 'Testes', 'Aprovação', 'Merge'];
+const milestones = ['Fila', 'Desenvolvimento', 'PR', 'Revisão', 'Testes', 'Aprovação', 'Seu merge'];
 const views = {
   pipeline: ['▦', 'Pipeline'], context: ['◆', 'Contexto'], planning: ['◫', 'Planejamento'], runs: ['▶', 'Execuções'],
   usage: ['◉', 'Custos e limites'], chat: ['◇', 'Chat do projeto'], repos: ['▣', 'Repositórios'], settings: ['⚙', 'Papéis e contexto']
@@ -32,7 +32,8 @@ const defaultProfile = {
 
 let workspace = [];
 let current;
-let view = 'pipeline';
+let view = 'overview';
+const overviewFilter = { project: '', repo: '', agent: '', stage: '' };
 let modal;
 let timer;
 let search = '';
@@ -175,19 +176,92 @@ function historyRows(p) {
   return { rows, footer, errors, hasMore: filtered.length > historyRowsShown };
 }
 
+const correctionsLabel = count => count ? count + (count === 1 ? ' correção' : ' correções') : '';
+
+function taskRow(task, p) {
+  const stage = stageFor(task, p);
+  const [label, tone, index] = stages[stage];
+  const dots = milestones.map((name, i) => '<span class="rail-step ' +
+    (stage === 'closed' ? '' : i < index ? 'done' : i === index ? 'current' : '') + '" title="' + name + '"></span>').join('');
+  const corrections = correctionsLabel(task.observation?.corrections);
+  return '<tr><td><button class="task-button" data-action="details" data-id="' + esc(task.id) + '" data-project="' + esc(p.id) +
+    '"><span class="task-id">' + esc(task.id) + '</span>' + esc(task.title) + '</button><small>' + esc(task.repo) +
+    (task.pr ? ' · PR #' + task.pr : '') + '</small></td><td><div class="rail" aria-label="' + label + '">' + dots +
+    '</div>' + (corrections ? '<div class="corrections"><span>' + corrections + '</span></div>' : '') +
+    '</td><td><strong class="stage-text ' + tone + '">' + esc(label) + '</strong><small>' + names[task.profile.dev.agent] +
+    ' desenvolve, ' + names[task.profile.qa.agent] + ' revisa</small></td></tr>';
+}
+
 function rows(p) {
   return p.tasks.filter(task => (!filter || stageFor(task, p) === filter) &&
     matchesSearch(task.id, task.title, task.repo, task.pr ? '#' + task.pr : ''))
-    .map(task => {
-      const [label, tone, index] = stages[stageFor(task, p)];
-      const dots = milestones.map((name, i) => '<span class="rail-step ' +
-        (i < index ? 'done' : i === index ? 'current' : '') + '" title="' + name + '"></span>').join('');
-      return '<tr><td><button class="task-button" data-action="details" data-id="' + esc(task.id) +
-        '"><span class="task-id">' + esc(task.id) + '</span>' + esc(task.title) + '</button><small>' + esc(task.repo) +
-        (task.pr ? ' · PR #' + task.pr : '') + '</small></td><td><div class="rail" aria-label="' + label + '">' + dots +
-        '</div></td><td>' + badge(label, tone) + '<small>' + names[task.profile.dev.agent] + ' → ' +
-        names[task.profile.qa.agent] + '</small></td></tr>';
+    .map(task => taskRow(task, p)).join('');
+}
+
+function activeReservations() {
+  const byAgent = new Map();
+  for (const owner of workspace) {
+    for (const run of owner.runs || []) {
+      if (run.role !== 'po' || run.status !== 'active' || run.expires <= Date.now()) continue;
+      byAgent.set(run.agent, [...(byAgent.get(run.agent) || []), 'Planejamento · ' + owner.name]);
+    }
+    for (const task of owner.tasks) {
+      if (!task.lease || task.lease.expires <= Date.now()) continue;
+      const agent = task.profile[task.lease.role].agent;
+      byAgent.set(agent, [...(byAgent.get(agent) || []), task.id + ' · ' + owner.name]);
+    }
+  }
+  return byAgent;
+}
+
+function overview() {
+  const busy = activeReservations();
+  const all = workspace.flatMap(p => p.tasks.map(task => ({ task, p, stage: stageFor(task, p) })));
+  const waiting = all.filter(item => item.stage === 'merge').length;
+  const summary = (waiting ? waiting + (waiting === 1 ? ' PR esperando' : ' PRs esperando') + ' seu merge' : 'Nenhum PR esperando seu merge') + '. ' +
+    (busy.size ? busy.size + (busy.size === 1 ? ' agente trabalhando' : ' agentes trabalhando') : 'Nenhum agente trabalhando') + '.';
+  const agentIds = [...new Set(workspace.flatMap(p => Object.values(p.profile).map(config => config.agent)))];
+  const agentCards = agentIds.map(agent => {
+    const work = busy.get(agent) || [];
+    const roleList = [...new Set(workspace.flatMap(p => Object.entries(p.profile)
+      .filter(([, config]) => config.agent === agent).map(([role]) => roles[role].split(' · ')[1])))].join(', ');
+    const quota = Object.entries({ fiveHours: 'janela de 5 horas', weekly: 'semana' }).map(([key, label]) => {
+      const window = usageLimits[agent]?.windows?.[key];
+      if (!window || Date.parse(window.resetsAt) <= Date.now()) return '';
+      return '<div class="quota-line"><progress value="' + window.used + '" max="100" aria-label="' + label + '"></progress><small>' +
+        window.used + '% da ' + label + ' usada</small></div>';
     }).join('');
+    return '<article class="card agent ' + agent + '"><div class="role">' + esc(roleList) + '</div><h3>' + esc(names[agent]) +
+      '</h3><div class="agent-state">' + (work.length ? 'Ocupado' : 'Livre') + '</div><small>' +
+      esc(work.join(' · ') || 'Sem reserva ativa') + '</small>' + (quota || '<small>Sem leitura de cota</small>') + '</article>';
+  }).join('');
+  const f = overviewFilter;
+  const repoOptions = Object.fromEntries(workspace.filter(p => !f.project || p.id === f.project)
+    .flatMap(p => p.repos.map(repo => [repo.slug, repo.slug])));
+  const filters = '<div class="toolbar entry-filters">' +
+    '<label class="repo-scope">Projeto<select data-overview="project">' + options({ '': 'Todos', ...Object.fromEntries(workspace.map(p => [p.id, p.name])) }, f.project) + '</select></label>' +
+    '<label class="repo-scope">Repositório<select data-overview="repo">' + options({ '': 'Todos', ...repoOptions }, f.repo) + '</select></label>' +
+    '<label class="repo-scope">Agente<select data-overview="agent">' + options({ '': 'Todos', ...Object.fromEntries(agentIds.map(id => [id, names[id]])) }, f.agent) + '</select></label>' +
+    '<label class="repo-scope">Etapa<select data-overview="stage">' + options({ '': 'Todas', ...Object.fromEntries(Object.entries(stages).map(([key, stage]) => [key, stage[0]])) }, f.stage) + '</select></label></div>';
+  const head = '<thead><tr><th>Card / repositório</th><th><div class="rail-labels">' + milestones.map(name => '<span>' + name + '</span>').join('') +
+    '</div></th><th>Status</th></tr></thead>';
+  const blocks = workspace.filter(p => !f.project || p.id === f.project).map(p => {
+    const tasks = p.tasks.filter(task => (!f.repo || task.repo === f.repo) && (!f.stage || stageFor(task, p) === f.stage) &&
+      (!f.agent || task.profile.dev.agent === f.agent || task.profile.qa.agent === f.agent));
+    const { dev, qa } = p.profile;
+    const preset = '<label class="repo-scope">Próximos cards<select data-preset="' + esc(p.id) + '">' + options({
+      auto: 'Automático, pela configuração e pela cota',
+      keep: names[dev.agent] + ' desenvolve, ' + names[qa.agent] + ' revisa',
+      swap: names[qa.agent] + ' desenvolve, ' + names[dev.agent] + ' revisa'
+    }, p.autoAssign ? 'auto' : 'keep') + '</select></label>';
+    return '<section class="panel overview-project"><div class="toolbar"><div><h2>' + esc(p.name) + '</h2><small>' +
+      esc(p.repos.map(repo => repo.kind + ' · ' + repo.slug).join('   ') || 'Sem repositórios') + '</small></div>' + preset +
+      btn('Abrir projeto', 'select', 'ghost', 'data-id="' + esc(p.id) + '"') + '</div><div class="table-wrap"><table>' + head + '<tbody>' +
+      (tasks.toReversed().map(task => taskRow(task, p)).join('') || '<tr><td colspan="3" class="empty">Nenhum card neste filtro.</td></tr>') +
+      '</tbody></table></div></section>';
+  }).join('');
+  return '<p class="overview-summary">' + summary + '</p><div class="agents">' + agentCards + '</div><section class="panel">' + filters +
+    '</section><div class="project-sections overview-list">' + blocks + '</div>';
 }
 
 function pipeline(p) {
@@ -485,14 +559,16 @@ async function refreshUsageLimits() {
 function render() {
   const p = project();
   $('#projects').innerHTML = workspace.map(item =>
-    '<button class="nav-item ' + (item.id === current ? 'active' : '') + '" data-action="select" data-id="' + esc(item.id) +
+    '<button class="nav-item ' + (item.id === current && !['overview', 'connections'].includes(view) ? 'active' : '') + '" data-action="select" data-id="' + esc(item.id) +
     '"><span class="nav-icon">◈</span><span>' + esc(item.name) + '</span></button>').join('');
   $('#nav').innerHTML = p ? Object.entries(views).map(([key, [icon, label]]) =>
     '<button class="nav-item ' + (key === view ? 'active' : '') + '" data-action="navigate" data-id="' + key +
     '"><span class="nav-icon">' + icon + '</span><span>' + label + '</span></button>').join('') : '';
   const showingConnections = view === 'connections';
+  const showingOverview = view === 'overview';
   $('#connections-nav').classList.toggle('active', showingConnections);
-  $('#breadcrumb').textContent = 'Workspace' + (showingConnections ? ' / Configurações' : p ? ' / ' + p.name : '');
+  $('#overview-nav').classList.toggle('active', showingOverview);
+  $('#breadcrumb').textContent = 'Workspace' + (showingConnections ? ' / Configurações' : showingOverview ? ' / Visão geral' : p ? ' / ' + p.name : '');
   $('#sync').hidden = showingConnections || !p;
   $('#sync').disabled = syncBusy;
   if (!p && !showingConnections) {
@@ -510,11 +586,12 @@ function render() {
     chat: ['Chat do projeto', 'Decisões e handoffs entre pessoas e agentes.', '', ''],
     repos: ['Repositórios', 'Contexto de API, web e mobile, com referências por repositório.', '+ Repositório', 'repo'],
     settings: ['Papéis e contexto', 'Defina quem planeja, implementa e revisa as próximas tarefas.', 'Editar configuração', 'config'],
-    connections: ['Conexões', 'Verifique seus CLIs e confirme o acesso dos agentes ao Orquestrador.', '', '']
+    connections: ['Conexões', 'Verifique seus CLIs e confirme o acesso dos agentes ao Orquestrador.', '', ''],
+    overview: ['Visão geral', 'Todos os projetos, repositórios, cards e PRs, com a etapa de cada um.', '', '']
   }[view];
   const action = info[3] ? btn(info[2], info[3], 'primary') : '';
-  const body = { pipeline, context: contextView, planning, runs, usage, chat, repos, settings, connections }[view](p);
-  $('#view').innerHTML = '<div class="heading"><div><p class="eyebrow">' + esc(showingConnections ? 'CONFIGURAÇÕES' : p.name.toUpperCase()) +
+  const body = { pipeline, context: contextView, planning, runs, usage, chat, repos, settings, connections, overview }[view](p);
+  $('#view').innerHTML = '<div class="heading"><div><p class="eyebrow">' + esc(showingConnections ? 'CONFIGURAÇÕES' : showingOverview ? 'WORKSPACE' : p.name.toUpperCase()) +
     '</p><h1>' + info[0] + '</h1><p class="subtitle">' + info[1] + '</p></div>' + action + '</div>' +
     body;
   if ($('#messages')) $('#messages').scrollTop = $('#messages').scrollHeight;
@@ -629,7 +706,8 @@ function open(type, id) {
   if (type === 'details') {
     const task = p.tasks.find(item => item.id === id);
     const [status, tone] = stages[stageFor(task, p)];
-    const details = '<div>' + badge(status, tone) + '<p class="pre">' + esc(task.description || 'Sem descrição.') +
+    const lastEvent = (p.runs || []).find(run => run.task === task.id && run.events.length)?.events.at(-1);
+    const details ='<div>' + badge(status, tone) + '<p class="pre">' + esc(task.description || 'Sem descrição.') +
       '</p><small>' + esc(task.repo) + ' · develop</small><small>Dependências · ' +
       esc(task.depends.join(', ') || 'Nenhuma') + '</small></div><div>' +
       Object.entries(task.profile).map(([role, config]) => '<p>' + esc(roles[role]) + ' · ' + esc(names[config.agent]) +
@@ -637,6 +715,9 @@ function open(type, id) {
       '</div>' + (task.observation?.head ? '<div class="repo-list"><code>' + esc(task.observation.head) + '</code><span>CI · ' +
         esc({ passed: 'Passou', failed: 'Falhou', pending: 'Pendente' }[task.observation.ci]) + ' · GitHub ' +
         esc(task.observation.mergeState || '—') + '</span></div>' : '') +
+      (task.observation?.corrections ? '<small>' + correctionsLabel(task.observation.corrections) + ' pedidas pelo QA neste PR</small>' : '') +
+      (task.observation?.pending ? '<div><h3>Pendências da revisão</h3><p class="pre">' + esc(task.observation.pending) + '</p></div>' : '') +
+      (lastEvent ? '<small>Último registro do agente · ' + esc(time(lastEvent.at)) + ' · ' + esc(lastEvent.message) + '</small>' : '') +
       (task.syncError ? '<p class="modal-error">' + esc(task.syncError) + '</p>' : '') +
       (task.observation?.url ? '<a href="' + esc(task.observation.url) + '" target="_blank" rel="noopener noreferrer">Abrir PR #' + task.pr + ' no GitHub ↗</a>' : '') +
       (task.sprint ? '<small>Sprint · ' + esc(sprintOptions[task.sprint]) + '</small>' : '') +
@@ -651,12 +732,18 @@ document.addEventListener('click', async event => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const { action, id } = button.dataset;
+  if (button.dataset.project && workspace.some(item => item.id === button.dataset.project)) current = button.dataset.project;
   if (action === 'select') {
     current = id; view = 'pipeline'; filter = ''; search = ''; historyRowsShown = historyPageSize; render();
   } else if (action === 'navigate' || action === 'settings') {
     view = id || 'settings';
     if (view === 'connections') await refreshMcpChecks();
-    else if (view === 'usage') { render(); await refreshUsageLimits(); }
+    else if (view === 'usage' || view === 'overview') {
+      render();
+      const shown = view;
+      try { usageLimits = await api('usage_limits', {}); } catch (error) { toast(error.message); }
+      if (view === shown) render();
+    }
     else render();
   } else if (action === 'more-prs') {
     historyRowsShown += historyPageSize;
@@ -786,7 +873,23 @@ document.addEventListener('click', async event => {
   } else open(action, id);
 });
 
-document.addEventListener('change', event => {
+document.addEventListener('change', async event => {
+  if (event.target.dataset.overview) {
+    overviewFilter[event.target.dataset.overview] = event.target.value;
+    if (event.target.dataset.overview === 'project') overviewFilter.repo = '';
+    render();
+    return;
+  }
+  if (event.target.dataset.preset) {
+    const target = event.target.dataset.preset;
+    try {
+      await api('quick_profile', { project: target, preset: event.target.value });
+      await load();
+      toast('Preset dos próximos cards atualizado.');
+    } catch (error) { toast(error.message); }
+    render();
+    return;
+  }
   if (['entry-repo', 'entry-type', 'entry-ended'].includes(event.target.id)) {
     if (event.target.id === 'entry-repo') entryRepo = event.target.value;
     else if (event.target.id === 'entry-type') entryType = event.target.value;
@@ -888,16 +991,17 @@ document.addEventListener('submit', async event => {
 
 try {
   await load();
+  usageLimits = await api('usage_limits', {});
 } catch (error) { toast(error.message); }
 render();
 setInterval(async () => {
   if (syncBusy || queryingCodex || $('#dialog').open || document.activeElement?.matches('input, select, textarea')) return;
   try {
-    const visibleData = () => view === 'usage' ? { workspace, usageLimits } :
+    const visibleData = () => ['usage', 'overview'].includes(view) ? { workspace, usageLimits } :
       ['pipeline', 'settings'].includes(view) || (view === 'repos' && repoScope === 'all') ? workspace : project();
     const previous = JSON.stringify(visibleData());
     await load();
-    if (view === 'usage') usageLimits = await api('usage_limits', {});
+    if (['usage', 'overview'].includes(view)) usageLimits = await api('usage_limits', {});
     if (JSON.stringify(visibleData()) !== previous) render();
   } catch { /* The next refresh can recover from a server restart. */ }
 }, 7000);

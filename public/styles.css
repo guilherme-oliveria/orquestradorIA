@@ -83,6 +83,19 @@ td:nth-child(2){width:36%}
 .rail-step.done{background:var(--teal);border-color:var(--teal)}
 .rail-step.current{background:var(--teal);border-color:var(--teal);box-shadow:0 0 0 4px #27625e}
 .rail-step:last-child{border-radius:2px;transform:rotate(45deg)}
+.corrections{margin:3px 14% 0 21%;border:2px solid var(--amber);border-top:0;border-radius:0 0 7px 7px;height:9px;position:relative;width:29%}
+.corrections span{position:absolute;left:50%;top:1px;transform:translateX(-50%);background:var(--panel);color:var(--amber);font-size:10px;font-weight:700;padding:0 6px;white-space:nowrap}
+.rail-labels{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;text-transform:none;letter-spacing:0;font-size:10px}
+.stage-text{display:block;font-size:13px}
+.stage-text.teal{color:var(--teal)}.stage-text.amber{color:var(--amber)}.stage-text.lav{color:var(--lav)}.stage-text.red{color:var(--danger)}
+.overview-summary{font-size:15px;margin:-8px 0 18px;color:var(--text)}
+.agent-state{font-size:30px;font-weight:300;letter-spacing:-.03em;margin:6px 0 2px}
+.quota-line{margin-top:9px}
+.quota-line progress{width:100%;height:5px;accent-color:var(--accent,var(--teal))}
+.overview-list{margin-top:14px}
+.overview-project .toolbar>div{min-width:0;flex:1 1 220px}
+.overview-project .repo-scope{margin:0}
+.overview-project td{padding-bottom:17px}
 .legend{padding:12px 14px;color:var(--muted);font-size:11px;border-top:1px solid var(--line);line-height:1.6}
 .empty{padding:27px;text-align:center;color:var(--muted);line-height:1.6}
 .chat{padding:16px}
@@ -115,7 +128,7 @@ td:nth-child(2){width:36%}
 .quota-window progress{width:100%;accent-color:var(--teal);height:7px}
 .cost-summary{margin-top:13px}
 .context-actions{margin-top:12px;justify-content:flex-start}
-.entry-filters{gap:12px;align-items:center}
+.entry-filters{gap:12px 22px;align-items:center;justify-content:flex-start}
 .entry-filters .repo-scope{margin:0}
 .entry-filters .button{margin-left:auto}
 .entry-help{margin:12px 0 14px}
