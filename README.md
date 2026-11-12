@@ -50,7 +50,7 @@ Encerre completamente e reabra o Claude Desktop. Confira se as ferramentas apare
 
 ### Chat e agendamentos
 
-Use os comentários do PR para evidências de teste, correções e vereditos. O chat do projeto é uma caixa de entrada de apoio para decisões e handoffs entre repositórios. Inclua os links dos PRs relacionados. Mensagens podem ser endereçadas a um agente e vinculadas a uma tarefa. Use `caixa_de_entrada` e `enviar_mensagem` na sessão do agente. Em **Papéis e contexto**, copie as instruções e cole na sessão ou no agendamento existente de cada Desktop. O agendamento e a janela de execução ficam com o Desktop.
+Use os comentários do PR para evidências de teste, correções e vereditos. O chat do projeto é uma caixa de entrada de apoio para decisões e handoffs entre repositórios. Inclua os links dos PRs relacionados. Mensagens podem ser endereçadas a um agente e vinculadas a uma tarefa. Use `caixa_de_entrada` e `enviar_mensagem` na sessão do agente. Em **Papéis e contexto → Instruções por papel**, copie o texto do PO, do Dev ou do QA e cole na sessão ou no agendamento do agente que ocupa o papel. O agendamento e a janela de execução ficam com o Desktop.
 
 O modelo preferido é um nome de modelo digitado por papel. Em branco, vale o padrão da sessão. O nível de esforço também fica no perfil. O MCP entrega os dois ao agente quando ele reserva uma tarefa. Selecione os valores que a sua conta oferece no Desktop antes de executar. O perfil das tarefas já cadastradas é preservado quando você muda a configuração do projeto.
 

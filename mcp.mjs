@@ -1,10 +1,10 @@
 import { createInterface } from 'node:readline';
-import { agents } from './lib/workflow.mjs';
+import { agents, hasLimits } from './lib/agents.mjs';
 import { prepareWorktree } from './lib/worktrees.mjs';
 
 const agent = process.argv[2];
 if (!Object.hasOwn(agents, agent)) {
-  process.stderr.write('Informe claude, codex ou gemini como argumento.\n');
+  process.stderr.write('Informe o agente como argumento: ' + Object.keys(agents).join(', ') + '.\n');
   process.exit(1);
 }
 
@@ -15,17 +15,18 @@ const tools = [
   ['projetos', 'workspace', 'Lista projetos, tarefas, papéis e estado dos PRs.', {}, []],
   ['contexto', 'context', 'Lê o contexto compartilhado do projeto: resumo, decisões, contratos e notas ativas (entries, filtráveis por repo), o Markdown gerado (generatedMarkdown), o Markdown oficial versionado e as referências de cada repositório com SHA de origem.', { project: string, repo: string, docs: { type: 'boolean' } }, ['project']],
   ['listar_contexto', 'context_entries', 'Lista rápida (sem consultar o GitHub) das decisões, contratos e notas ativas do projeto. Filtre por repo (dono/repositorio) e type (decision, contract, note). all=true inclui as encerradas.', { project: string, repo: string, type: { enum: ['decision', 'contract', 'note'] }, all: { type: 'boolean' } }, ['project']],
-  ['registrar_decisao', 'add_context_entry', 'Registra uma decisão de produto ou arquitetura que os outros repositórios precisam conhecer. PO e Dev. repos vazio vale para todos; substitui recebe o ID (DEC-NN) da decisão que esta substitui.', { project: string, title: string, body: string, repos: { type: 'array', items: string }, supersedes: string }, ['project', 'title', 'body'], { type: 'decision' }],
-  ['registrar_contrato', 'add_context_entry', 'Registra ou atualiza um contrato entre repositórios (endpoint, DTO, evento, código de erro). PO e Dev. Informe em repos quem publica e quem consome; substitui recebe o ID (CON-NN) da versão anterior.', { project: string, title: string, body: string, repos: { type: 'array', items: string }, supersedes: string }, ['project', 'title', 'body'], { type: 'contract' }],
+  ['registrar_decisao', 'add_context_entry', 'Registra uma decisão de produto ou arquitetura que os outros repositórios precisam conhecer. PO e Dev. repos vazio vale para todos; supersedes recebe o ID (DEC-NN) da decisão que esta substitui.', { project: string, title: string, body: string, repos: { type: 'array', items: string }, supersedes: string }, ['project', 'title', 'body'], { type: 'decision' }],
+  ['registrar_contrato', 'add_context_entry', 'Registra ou atualiza um contrato entre repositórios (endpoint, DTO, evento, código de erro). PO e Dev. Informe em repos quem publica e quem consome; supersedes recebe o ID (CON-NN) da versão anterior.', { project: string, title: string, body: string, repos: { type: 'array', items: string }, supersedes: string }, ['project', 'title', 'body'], { type: 'contract' }],
   ['registrar_nota', 'add_context_entry', 'Registra uma nota de andamento, risco ou pendência visível aos outros repositórios. Qualquer papel, inclusive o QA.', { project: string, title: string, body: string, repos: { type: 'array', items: string }, supersedes: string }, ['project', 'title', 'body'], { type: 'note' }],
   ['encerrar_contexto', 'retire_context_entry', 'Encerra uma entrada de contexto que deixou de valer, sem substituta. Só o autor ou o PO.', { project: string, id: string }, ['project', 'id']],
   ['markdown_contexto', 'context_markdown', 'Gera o Markdown do contexto compartilhado (resumo + entradas ativas) e o caminho onde ele é versionado nos repositórios. Use para atualizar o arquivo por PR.', { project: string }, ['project']],
   ['verificar_contexto', 'context_audit', 'Compara o Markdown configurado na develop de cada repositório com o arquivo oficial e indica se o oficial está atrás do painel (generatedMatches). Propague o arquivo por PR Gitflow.', { project: string }, ['project']],
+  ['instrucoes_do_papel', 'role_instructions', 'Devolve as instruções completas do seu papel neste projeto (PO, Dev ou QA), geradas a partir dos papéis, repositórios e regras cadastrados. Sem role, usa o papel desta sessão no projeto.', { project: string, role: { enum: ['po', 'dev', 'qa'] } }, ['project']],
   ['caixa_de_entrada', 'inbox', 'Lê as mensagens recentes do chat endereçadas a este agente e as conversas gerais.', { project: string }, ['project']],
-  ['enviar_mensagem', 'post', 'Registra uma mensagem no chat do projeto. Destinatários: user, all, claude, codex, gemini.', { project: string, task: string, to: string, text: string }, ['project', 'text']],
+  ['enviar_mensagem', 'post', 'Registra uma mensagem no chat do projeto. Destinatários: user, all, ' + Object.keys(agents).join(', ') + '.', { project: string, task: string, to: string, text: string }, ['project', 'text']],
   ['ler_planejamento', 'planning', 'Lê o plano do PO, sprints e cortes de release do projeto.', { project: string }, ['project']],
   ['registrar_custo', 'record_cost', 'Registra o valor acumulado da execução e atualiza o lançamento anterior da mesma moeda e tipo. Use billed para cobrança confirmada, estimate para estimativa ou allocated para rateio. Registre antes de liberar a reserva.', { ...fields, run: string, amount: { type: 'number' }, currency: { enum: ['USD', 'BRL', 'EUR'] }, kind: { enum: ['billed', 'estimate', 'allocated'] }, source: string }, ['project', 'token', 'amount', 'currency', 'kind', 'source']],
-  ['registrar_limites', 'save_usage_limits', 'Registra as janelas reais informadas pela própria conta. Envie fiveHours e/ou weekly, cada uma com used (percentual) e resetsAt (data ISO com fuso).', { provider: { enum: ['codex', 'claude'] }, windows: { type: 'object' } }, ['provider', 'windows']],
+  ['registrar_limites', 'save_usage_limits', 'Registra as janelas reais informadas pela própria conta. Envie fiveHours e/ou weekly, cada uma com used (percentual) e resetsAt (data ISO com fuso).', { provider: { enum: Object.keys(agents).filter(hasLimits) }, windows: { type: 'object' } }, ['provider', 'windows']],
   ['salvar_plano', 'save_plan', 'Salva o plano de execução em Markdown. Disponível para o PO.', { project: string, markdown: string }, ['project', 'markdown']],
   ['salvar_sprint', 'save_sprint', 'Cria ou edita uma sprint. Use datas YYYY-MM-DD e status planned, active ou done.', { project: string, sprint: string, name: string, goal: string, start: string, end: string, status: { enum: ['planned', 'active', 'done'] } }, ['project', 'name', 'status']],
   ['atribuir_sprint', 'assign_sprint', 'Atribui uma tarefa a uma sprint ou remove a atribuição com sprint vazia.', { project: string, task: string, sprint: string }, ['project', 'task', 'sprint']],

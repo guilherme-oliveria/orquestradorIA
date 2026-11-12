@@ -116,6 +116,7 @@ td:nth-child(2){width:36%}
 .connection-card{display:grid;gap:13px}
 .connection-card h3{margin-bottom:5px}
 .connection-card .actions{justify-content:flex-start}
+.register{display:block;background:#101622;border:1px solid var(--line);border-radius:7px;padding:8px 10px;margin:6px 0 8px;font-size:11px;overflow-wrap:anywhere}
 .project-sections{display:grid;gap:14px}
 .project-sections details summary{cursor:pointer;font-weight:650}
 .project-actions{display:flex;gap:6px;flex-wrap:wrap;margin:9px 0}

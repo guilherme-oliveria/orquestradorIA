@@ -42,7 +42,10 @@ const prHistories = new Map();
 const historyPageSize = 25;
 let historyRowsShown = historyPageSize;
 let repoScope = 'current';
-const connectionProviders = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini CLI', opencode: 'OpenCode' };
+// Agentes vêm do registro do servidor (lib/agents.mjs) junto com o workspace.
+let agentList = [];
+const connectionProviders = {};
+const assignable = () => Object.fromEntries(agentList.filter(agent => agent.assignable).map(agent => [agent.id, agent.label]));
 const cliResults = new Map();
 const cliPending = new Set();
 let mcpChecks = {};
@@ -82,7 +85,13 @@ async function api(action, args) {
 async function load() {
   const response = await fetch('/api/workspace');
   if (!response.ok) throw new Error('Não foi possível carregar o workspace.');
-  workspace = (await response.json()).projects;
+  const data = await response.json();
+  workspace = data.projects;
+  agentList = data.agents || [];
+  for (const agent of agentList) {
+    names[agent.id] = agent.label;
+    connectionProviders[agent.id] = agent.short;
+  }
   if (!project()) current = workspace[0]?.id;
 }
 
@@ -326,7 +335,7 @@ function chat(p) {
     '<div class="messages" id="messages">' + (messages || '<p class="empty">As mensagens do projeto aparecem aqui.</p>') + '</div>' +
     '<form class="compose" id="compose"><textarea name="text" aria-label="Mensagem" required maxlength="5000" placeholder="Escreva uma decisão, orientação ou pergunta…"></textarea><div class="actions"><select name="task" aria-label="Tarefa">' +
       options({ '': 'Sem tarefa', ...Object.fromEntries(p.tasks.map(task => [task.id, task.id])) }, '') +
-      '</select><select name="to" aria-label="Destinatário">' + options({ all: 'Todos', claude: names.claude, codex: names.codex, gemini: names.gemini }, 'all') +
+      '</select><select name="to" aria-label="Destinatário">' + options({ all: 'Todos', ...assignable() }, 'all') +
       '</select><button class="button primary" type="submit">Enviar mensagem</button></div></form></section>';
 }
 
@@ -371,9 +380,11 @@ function settings(p) {
     '</div></section>';
   return '<div class="agents">' + agentsView(p) + '</div><section class="card"><h2>Resumo do projeto</h2><div class="pre muted">' +
     esc(p.context || 'Adicione objetivo, arquitetura e links do projeto.') +
-    '</div><small>Decisões, contratos e notas ficam na aba Contexto e entram no Markdown gerado junto com este resumo.</small></section>' + gitContext + '<section class="card compose"><div class="section-head"><h2>Configuração do Desktop</h2>' +
-    btn('Copiar instruções da sessão', 'copy') +
-    '</div><p class="subtitle">O perfil acompanha a tarefa como preferência. Escolha o modelo e o nível disponíveis na sessão do Desktop. Cadastre o conector MCP seguindo o README do projeto.</p></section>';
+    '</div><small>Decisões, contratos e notas ficam na aba Contexto e entram no Markdown gerado junto com este resumo.</small></section>' + gitContext + '<section class="card compose"><div class="section-head"><h2>Instruções por papel</h2></div>' +
+    '<p class="subtitle">Texto gerado a partir dos papéis, repositórios e regras deste projeto. Cole na sessão ou no agendamento do agente que ocupa cada papel; ao trocar os papéis, copie de novo. O agente também obtém o mesmo texto com <code>instrucoes_do_papel</code>.</p>' +
+    '<div class="actions context-actions">' + Object.entries(roles).map(([role, label]) =>
+      btn('Copiar instruções do ' + label.split(' · ')[1] + ' · ' + esc(names[p.profile[role].agent]), 'copy-role', role === 'po' ? '' : 'ghost', 'data-id="' + role + '"')).join('') +
+    '</div></section>';
 }
 
 function connections() {
@@ -382,10 +393,12 @@ function connections() {
     'signed-in': 'Login local ativo', 'signed-out': 'Login necessário',
     unknown: 'Não foi possível verificar o login', unsupported: 'Teste de CLI verifica a versão'
   };
-  const cards = Object.entries(connectionProviders).map(([provider, label]) => {
+  const cards = agentList.map(agent => {
+    const provider = agent.id;
+    const label = agent.short;
     const result = cliResults.get(provider);
     const checkedAt = mcpChecks[provider];
-    const canTestMcp = provider !== 'opencode';
+    const canTestMcp = agent.assignable;
     const mcp = !canTestMcp ? badge('Integração MCP pendente', '') :
       checkedAt ? badge('MCP verificado', 'teal') + '<small>Último teste · ' + esc(time(checkedAt)) + '</small>' :
         badge('MCP aguardando teste', '');
@@ -396,11 +409,13 @@ function connections() {
       '</div><div class="actions">' +
       btn(cliPending.has(provider) ? 'Testando…' : 'Testar CLI', 'test-cli', '', 'data-id="' + provider + '"' +
         (cliPending.has(provider) ? ' disabled' : '')) +
-      (canTestMcp ? btn('Copiar teste MCP', 'copy-mcp-test', 'ghost') : '') + '</div></article>';
+      (canTestMcp ? btn('Copiar teste MCP', 'copy-mcp-test', 'ghost') : '') + '</div>' +
+      (agent.register ? '<div><h3>Registrar o MCP no CLI</h3><code class="register">' + esc(agent.register) + '</code>' +
+        btn('Copiar comando', 'copy-register', 'ghost', 'data-id="' + provider + '"') + '</div>' : '') + '</article>';
   }).join('');
   return '<section class="card connection-guide"><p class="muted">O teste de CLI verifica a instalação no ambiente do painel. ' +
     'Para confirmar uma sessão Desktop ou CLI, copie o teste MCP, cole na sessão e depois atualize os resultados aqui. ' +
-    'Esses testes verificam a configuração sem enviar uma solicitação direta ao modelo pelo painel.</p>' +
+    'Esses testes verificam a configuração sem enviar uma solicitação direta ao modelo pelo painel. O comando de registro usa o Node e o mcp.mjs deste ambiente; nos Desktops do Windows com o painel no WSL, use wsl.exe como no manual.</p>' +
     btn(loadingChecks ? 'Atualizando…' : 'Atualizar testes MCP', 'refresh-mcp-tests', 'ghost', loadingChecks ? 'disabled' : '') +
     '</section><div class="connection-grid">' + cards + '</div>';
 }
@@ -490,7 +505,7 @@ const money = (micros, currency) => new Intl.NumberFormat('pt-BR', {
 }).format(micros / 1_000_000);
 
 function usage(p) {
-  const quotaCards = ['claude', 'codex'].map(provider => {
+  const quotaCards = agentList.filter(agent => agent.limits).map(agent => agent.id).map(provider => {
     const snapshot = usageLimits[provider];
     const estimate = snapshot?.sessionEstimate;
     const windows = Object.entries({ fiveHours: 'Janela de 5 horas', weekly: 'Janela semanal' }).map(([key, label]) => {
@@ -507,7 +522,7 @@ function usage(p) {
       btn('Informar limites', 'limits', 'ghost', 'data-id="' + provider + '"') + '</div>' +
       (snapshot?.checkedAt ? '<small>Origem · ' + esc(snapshot.source) + ' · Leitura ' + esc(time(snapshot.checkedAt)) + '</small>' : '') +
       windows + (provider === 'codex' ? btn(queryingCodex ? 'Consultando…' : 'Consultar Codex local', 'query-codex-limits', '',
-        queryingCodex ? 'disabled' : '') : '<div class="quota-window"><h3>Estimativa da sessão do Claude Code</h3>' +
+        queryingCodex ? 'disabled' : '') : provider !== 'claude' ? '' : '<div class="quota-window"><h3>Estimativa da sessão do Claude Code</h3>' +
         (estimate ? '<strong>' + esc(money(estimate.micros, 'USD')) + '</strong><small>Leitura em ' + esc(time(estimate.checkedAt)) + '</small>' :
           '<small>Aguardando leitura da statusline do Claude Code.</small>') +
         '<small>Estimativa da última sessão recebida, separada dos custos por projeto.</small></div>') + '</article>';
@@ -604,7 +619,7 @@ function profileFields(profile) {
   return '<label>Perfis rápidos<select id="preset"><option value="">Personalizado</option><option value="claude">Claude PO e Dev · Codex QA</option>' +
     '<option value="codex">Codex PO e Dev · Claude QA</option><option value="original">Claude PO · Codex Dev · Claude QA</option></select></label>' +
     Object.entries(roles).map(([role, label]) => '<fieldset><legend>' + label + '</legend><div class="profile-fields"><label>Agente<select name="' +
-      role + '-agent">' + options({ claude: names.claude, codex: names.codex, gemini: names.gemini }, profile[role].agent) +
+      role + '-agent">' + options(assignable(), profile[role].agent) +
       '</select></label>' + textField('Modelo preferido', role + '-model', profile[role].model, 'maxlength="100" placeholder="Padrão do Desktop"') +
       '<label>Nível de esforço<select name="' + role + '-effort">' + options(efforts, profile[role].effort) +
       '</select></label>' + textField('Login GitHub' + (role === 'qa' ? ' do QA' : ' (opcional)'), role + '-login', profile[role].login,
@@ -629,7 +644,7 @@ function open(type, id) {
     textField('Valor', 'amount', '', 'required inputmode="decimal" placeholder="0,50"') +
     '<label>Moeda<select name="currency">' + options({ USD: 'USD', BRL: 'BRL', EUR: 'EUR' }, 'USD') + '</select></label>' +
     '<label>Tipo<select name="kind">' + options(costKinds, 'estimate') + '</select></label>' +
-    '<label>Agente<select name="agent">' + options({ claude: names.claude, codex: names.codex, gemini: names.gemini }, p.profile.dev.agent) + '</select></label>' +
+    '<label>Agente<select name="agent">' + options(assignable(), p.profile.dev.agent) + '</select></label>' +
     '<label>Papel<select name="role">' + options(roles, 'dev') + '</select></label>' +
     textField('Origem do valor', 'source', '', 'required maxlength="160" placeholder="Resumo da sessão ou fatura"'));
   if (type === 'limits') {
@@ -841,24 +856,13 @@ document.addEventListener('click', async event => {
       toast('Instruções dos PRs copiadas.');
     } catch { toast('O navegador não liberou a área de transferência.'); }
   }
-  else if (action === 'copy') {
+  else if (action === 'copy-role' || action === 'copy-register') {
     try {
-      await navigator.clipboard.writeText(
-        'Use o MCP orquestradoria para trabalhar no projeto ' + current + '. Leia contexto e caixa_de_entrada. ' +
-        'Antes de implementar, leia listar_contexto do seu repositório. Registre com registrar_decisao e registrar_contrato (PO e Dev) o que afeta outros repositórios ' +
-        'e com registrar_nota riscos e pendências; use substitui para atualizar uma entrada existente. ' +
-        'Veja seu papel em projetos e consulte ler_planejamento. Como PO, use iniciar_planejamento, publique o plano com salvar_plano e organize as sprints. ' +
-        'Como Dev ou QA, reserve uma tarefa com reservar_tarefa e confirme o perfil de modelo e esforço. Atualize as referências ' +
-        'do clone antes de preparar_worktree. Registre a thread e o progresso com atualizar_execucao. ' +
-        'Se a sessão fornecer custo acumulado, informe com registrar_custo antes de liberar a reserva e indique a origem e o tipo do valor. ' +
-        'Como Dev, trabalhe em feature/ ou bugfix/ a partir de develop e ' +
-        'vincule o PR com vincular_pr. Quando a entrega envolver mais de um repositório, use uma tarefa e um PR por repositório, com links entre os PRs. ' +
-        'Como QA, revise o SHA e os testes de cada PR, valide o fluxo integrado quando aplicável e publique review formal ou veredito no PR ' +
-        'com QA: APROVADO <sha> ou QA: CORRIGIR <sha> na primeira linha. Registre os testes no próprio PR. ' +
-        'Para um handoff entre repositórios, use enviar_mensagem no chat do projeto e inclua os links dos PRs. O merge é humano.'
-      );
-      toast('Instruções copiadas.');
-    } catch { toast('O navegador não liberou a área de transferência. Use as instruções do README.'); }
+      const text = action === 'copy-register' ? agentList.find(agent => agent.id === id).register :
+        (await api('role_instructions', { project: current, role: id })).text;
+      await navigator.clipboard.writeText(text);
+      toast(action === 'copy-register' ? 'Comando copiado. Rode no terminal do ambiente do painel.' : 'Instruções copiadas. Cole na sessão ou no agendamento do agente.');
+    } catch (error) { toast(error.message || 'O navegador não liberou a área de transferência.'); }
   }
   else if (action === 'sync') {
     syncBusy = true;

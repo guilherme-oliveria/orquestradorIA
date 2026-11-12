@@ -1,7 +1,7 @@
 # Orquestrador IA — plano de execução (MVP 2)
 
 > Criado em 2026-11-10 a partir do guia `gui-arquitetura claude-codex`, do código da `develop` (v0.1.0) e da imagem de referência do painel.
-> **Status: aprovado em 2026-11-10; ondas 0 e 1 integradas (PRs #3 e #4), onda 2 em andamento.**
+> **Status: aprovado em 2026-11-10; ondas 0 a 2 integradas (PRs #3, #4 e #5), onda 3 em andamento.**
 
 A `develop` já entrega cadastro de projeto com N repositórios, papéis por agente (PO/Dev/QA → Claude/Codex/Gemini), leitura de contexto pelo MCP e pipeline de tarefas/PRs por projeto. Este plano **não reescreve nada**: migra o painel para o WSL, fecha as três lacunas dos problemas originais (contexto preso nos `.md`, visão única de todos os projetos, agentes plugáveis) e aproxima o painel da imagem de referência.
 
@@ -128,17 +128,17 @@ A release é aberta e aprovada pelo Guilherme (`release/X.Y.Z` → `main`).
 
 ### Onda 3 — agentes plugáveis (problema 2)
 
-- [ ] **ORQ-10 Registro único de agentes**
+- [x] **ORQ-10 Registro único de agentes**
   Depende de: ORQ-01
   Faz: `lib/agents.mjs` com, por agente, `{ id, label, cli: { command, versionArgs, authCheck }, mcp: { registerCommand }, roles: { po, dev, qa } }`; `workflow.mjs`, `mcp.mjs`, `connections.mjs`, `service.mjs` e `app.js` passam a derivar nomes, validações e opções dele (o painel recebe a lista por `/api/workspace`).
   Pronto quando: adicionar um agente de teste só no registro faz ele aparecer em papéis, conexões, chat e MCP; testes verdes.
 
-- [ ] **ORQ-11 Instruções por papel geradas do guia**
+- [x] **ORQ-11 Instruções por papel geradas do guia**
   Depende de: ORQ-10
   Faz: templates de instrução por papel (PO, Dev, QA) com campos do projeto (repos, docs, checks, protocolo `QA: APROVADO/CORRIGIR <sha>`, regras Gitflow), derivados do guia atual; botão "Copiar instruções do PO / Dev / QA" por agente para colar na sessão ou no agendamento do Desktop; o texto muda conforme quem ocupa cada papel.
   Pronto quando: trocar Claude↔Codex nos papéis gera instruções coerentes sem editar o guia.
 
-- [ ] **ORQ-12 Diagnóstico por agente**
+- [x] **ORQ-12 Diagnóstico por agente**
   Depende de: ORQ-10
   Faz: Configurações → Conexões lê os testes do registro (CLI, login, MCP) e mostra o comando de registro do MCP pronto para copiar, com o caminho do WSL.
   Pronto quando: o cartão de cada agente mostra versão, login e último teste MCP a partir do registro.
