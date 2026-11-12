@@ -1,7 +1,7 @@
 # Orquestrador IA — plano de execução (MVP 2)
 
 > Criado em 2026-11-10 a partir do guia `gui-arquitetura claude-codex`, do código da `develop` (v0.1.0) e da imagem de referência do painel.
-> **Status: aprovado em 2026-11-10; ondas 0 a 2 integradas (PRs #3, #4 e #5), onda 3 em andamento.**
+> **Status: aprovado em 2026-11-10; MVP concluído em 2026-11-12: ondas 0 a 3 integradas (PRs #3 a #6). Onda 4 adiada como MVP futuro, por decisão do Guilherme.**
 
 A `develop` já entrega cadastro de projeto com N repositórios, papéis por agente (PO/Dev/QA → Claude/Codex/Gemini), leitura de contexto pelo MCP e pipeline de tarefas/PRs por projeto. Este plano **não reescreve nada**: migra o painel para o WSL, fecha as três lacunas dos problemas originais (contexto preso nos `.md`, visão única de todos os projetos, agentes plugáveis) e aproxima o painel da imagem de referência.
 
@@ -49,7 +49,7 @@ A `develop` já entrega cadastro de projeto com N repositórios, papéis por age
 | 1. Contexto estruturado | ORQ-04, ORQ-05, ORQ-06 | Agente do mobile lê pelo MCP uma decisão registrada pelo agente do back; aba "Contexto" no painel; exportação para `docs/CONTEXTO-PROJETO.md` |
 | 2. Visão geral | ORQ-07, ORQ-08, ORQ-09 | Página inicial com todos os projetos, cards com trilho e contagem de correções, resumo "N PRs esperando seu merge" como na imagem |
 | 3. Agentes plugáveis | ORQ-10, ORQ-11, ORQ-12 | Novo agente = uma entrada em `lib/agents.mjs`; instruções por papel geradas a partir do guia; diagnóstico por agente |
-| 4. Pós-MVP | ORQ-13, ORQ-14 | Runner local por CLI e propagação automática do contexto por PR |
+| 4. MVP futuro (adiado) | ORQ-13, ORQ-14 | Runner local por CLI e propagação automática do contexto por PR |
 
 Cada onda cabe em 1 a 2 sessões de trabalho. A onda seguinte começa depois do merge da anterior na `develop`.
 
@@ -59,7 +59,7 @@ Cada onda cabe em 1 a 2 sessões de trabalho. A onda seguinte começa depois do 
 | --- | --- | --- | --- |
 | M1 | 0.2.0 | Usar o painel no WSL com os Desktops e registrar/ler decisões e contratos entre repos pelo MCP | Onda 1 integrada; `node --test` verde |
 | M2 (MVP) | 0.3.0 | Ver todos os projetos num painel só, no layout da imagem, e trocar/adicionar agentes sem editar o guia | Onda 3 integrada |
-| M3 | 0.4.0 | Agentes disparados pelo painel via CLI, sem agendamento manual nos Desktops | Onda 4 |
+| M3 (futuro) | 0.4.0 | Agentes disparados pelo painel via CLI, sem agendamento manual nos Desktops | Onda 4, adiada |
 
 A release é aberta e aprovada pelo Guilherme (`release/X.Y.Z` → `main`).
 
@@ -143,7 +143,11 @@ A release é aberta e aprovada pelo Guilherme (`release/X.Y.Z` → `main`).
   Faz: Configurações → Conexões lê os testes do registro (CLI, login, MCP) e mostra o comando de registro do MCP pronto para copiar, com o caminho do WSL.
   Pronto quando: o cartão de cada agente mostra versão, login e último teste MCP a partir do registro.
 
-### Onda 4 — pós-MVP
+### Onda 4 — MVP futuro (adiado)
+
+> Decisão de 2026-11-12: não fazer agora. O fluxo segue como está: os pedidos e as sessões continuam no Claude Desktop e no Codex Desktop, e o painel organiza e mostra o andamento. Reavaliar depois de usar o MVP com o Dieta+, se manter sessão aberta ou agendamento configurado virar incômodo.
+>
+> Antes de começar o ORQ-13, definir: limite de cota para pausar execuções, máximo de execuções simultâneas, permissões pré-liberadas dos CLIs e onde ficam os clones no WSL. O runner dispara execuções em segundo plano; não é um chat no painel.
 
 - [ ] **ORQ-13 Runner local por CLI**
   Depende de: ORQ-11
