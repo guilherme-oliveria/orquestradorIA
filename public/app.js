@@ -395,6 +395,27 @@ function chat(p) {
       '</select><button class="button primary" type="submit">Enviar mensagem</button></div></form></section>';
 }
 
+const onboardingLabels = {
+  present: ['AGENTS.md com a seção do Orquestrador', 'teal'], 'pr-open': ['PR do AGENTS.md aberto', 'lav'],
+  'pr-created': ['PR do AGENTS.md aberto', 'lav'], error: ['AGENTS.md não conferido', 'amber'], skipped: ['AGENTS.md não conferido', '']
+};
+const onboardingBadge = state => {
+  if (!state) return badge('AGENTS.md ainda não adotado', '');
+  const [label, tone] = onboardingLabels[state.status] || onboardingLabels.skipped;
+  return badge(label, tone) + (state.url ? ' <a href="' + esc(state.url) + '" target="_blank" rel="noopener noreferrer">PR #' + esc(state.number) + ' ↗</a>' : '') +
+    (state.error ? '<small>' + esc(state.error) + '</small>' : '');
+};
+
+function adoptionReport(result) {
+  const plan = result.plan?.error ? 'Plano de ação: ' + esc(result.plan.error) :
+    'Plano de ação: ' + result.plan.created + ' cards criados' + result.plan.repos.filter(repo => repo.error)
+      .map(repo => ' · ' + esc(repo.repo.split('/')[1]) + ' sem plano em ' + esc(result.plan.path)).join('');
+  showModal('details', 'Adoção dos repositórios', result.repos.map(repo => '<div class="copy-row"><div><strong>' + esc(repo.slug) +
+    '</strong><small>' + esc(repo.kind) + (repo.added ? ' · cadastrado agora' : '') + ' · ' + (repo.docs.length ? repo.docs.length + ' documentos de referência' : 'sem documentos de referência detectados') +
+    '</small></div><div>' + onboardingBadge(repo.agents) + '</div></div>').join('') + '<p class="muted">' + plan +
+    '</p><p class="muted">Faça o merge dos PRs do AGENTS.md pelo fluxo de cada repositório. Repita a adoção quando quiser conferir de novo.</p>');
+}
+
 function repos(p) {
   const showAll = repoScope === 'all';
   const projects = showAll ? workspace : [p];
@@ -402,13 +423,14 @@ function repos(p) {
     '<article class="card"><div class="repo-tags">' + badge(repo.kind, 'lav') +
     '<span class="badge teal" title="' + esc(owner.id) + '">' + esc(owner.name) + '</span></div>' +
     '<div class="repo-list"><strong>' + esc(repo.slug) + '</strong><span>Base Gitflow · develop</span>' +
-    '<span>CI · ' + esc(repo.checks.join(', ') || 'Todos os checks publicados') + '</span>' +
+    '<span>CI · ' + esc(repo.checks.join(', ') || 'Todos os checks publicados') + '</span><span>' + onboardingBadge(repo.onboarding) + '</span>' +
     repo.docs.map(path => '<code>' + esc(path) + '</code>').join('') +
     '<a href="https://github.com/' + esc(repo.slug) +
       '" target="_blank" rel="noopener noreferrer">Abrir no GitHub ↗</a></div></article>'
   ));
-  const scope = '<label class="repo-scope">Exibir repositórios<select id="repo-scope">' +
-    options({ current: 'Projeto atual', all: 'Todos os projetos' }, repoScope) + '</select></label>';
+  const scope = '<div class="section-head"><label class="repo-scope">Exibir repositórios<select id="repo-scope">' +
+    options({ current: 'Projeto atual', all: 'Todos os projetos' }, repoScope) + '</select></label>' +
+    btn('Adotar repositórios', 'adopt', 'ghost') + '</div>';
   const empty = showAll ? 'Nenhum repositório cadastrado nos projetos.' :
     'Cadastre o primeiro repositório do projeto e indique os Markdown de referência.';
   return scope + (cards.length ? '<div class="repos">' + cards.join('') + '</div>' :
@@ -723,6 +745,8 @@ function showModal(type, title, fields, data = {}) {
 function open(type, id) {
   if (type === 'project') return showModal(type, 'Novo projeto',
     textField('Nome', 'name', '', 'required maxlength="80"') + textField('Identificador', 'id', '', 'required maxlength="48" placeholder="meu-projeto"') +
+    area('Repositórios do GitHub, um por linha (dono/repositorio ou o link)', 'repos', '', 'placeholder="time/minha-api&#10;time/meu-app"') +
+    '<p class="muted">O painel cadastra esses repositórios, detecta os documentos de referência, abre em cada um o PR da seção "Orquestrador IA" no AGENTS.md e importa o plano de ação para o Kanban.</p>' +
     area('Contexto em Markdown', 'context', '', 'maxlength="12000"') + profileFields(defaultProfile));
   const p = project();
   if (type === 'cost') showModal(type, 'Registrar custo · ' + p.name,
@@ -769,6 +793,9 @@ function open(type, id) {
     '<p class="muted">A sprint precisa ter todas as tarefas com merge validado. O corte registra os commits da develop para revisão.</p>');
   if (type === 'config') showModal(type, 'Papéis, modelos e contexto',
     profileFields(p.profile) + area('Contexto em Markdown', 'context', p.context, 'maxlength="12000"'));
+  if (type === 'adopt') showModal(type, 'Adotar repositórios · ' + p.name,
+    area('Repositórios novos, um por linha (opcional)', 'repos', '', 'placeholder="time/novo-repo"') +
+    '<p class="muted">Cadastra os repositórios novos e, para todos os repositórios do projeto: confere a seção "Orquestrador IA" no AGENTS.md (abre o PR onde faltar) e reimporta o plano de ação. Pode repetir à vontade.</p>');
   if (type === 'importplan') {
     if (!p.repos.length) return toast('Cadastre um repositório antes de importar o plano.');
     showModal(type, 'Importar do plano de ação',
@@ -1086,7 +1113,7 @@ document.addEventListener('submit', async event => {
     else {
       const actions = {
         project: 'create_project', config: 'settings', repo: 'add_repo', task: 'add_task', link: 'attach_pr', official: 'official_repo',
-        entry: 'add_context_entry', plansource: 'plan_source', importplan: 'import_plan',
+        entry: 'add_context_entry', plansource: 'plan_source', importplan: 'import_plan', adopt: 'adopt_repos',
         plan: 'save_plan', sprint: 'save_sprint', assign: 'assign_sprint', cut: 'cut_release',
         cost: 'record_cost', limits: 'save_usage_limits'
       };
@@ -1096,6 +1123,9 @@ document.addEventListener('submit', async event => {
         role, Object.fromEntries(['agent', 'model', 'effort', 'login'].map(key => [key, values[role + '-' + key]]))
       ]));
       if (modal.type === 'repo') { args.docs = split(values.docs); args.checks = split(values.checks); }
+      if (modal.type === 'adopt') args.repos = split(values.repos);
+      const projectRepos = modal.type === 'project' ? split(values.repos) : [];
+      if (modal.type === 'project') delete args.repos;
       if (modal.type === 'task') args.depends = split(values.depends);
       if (modal.type === 'entry') {
         args.type = values.type || modal.entryType;
@@ -1118,6 +1148,12 @@ document.addEventListener('submit', async event => {
       }
       const result = await api(actions[modal.type], args);
       if (modal.type === 'project') { current = result.id; view = 'board'; search = ''; filter = ''; }
+      let report = modal.type === 'adopt' ? result : null;
+      if (projectRepos.length) {
+        submit.textContent = 'Adotando repositórios…';
+        try { report = await api('adopt_repos', { project: result.id, repos: projectRepos }); }
+        catch (error) { toastAfter = 'Projeto criado, mas a adoção falhou: ' + error.message; }
+      }
       if (modal.type === 'importplan') {
         toastAfter = result.created + ' cards criados, ' + result.updated + ' atualizados' +
           result.repos.filter(repo => repo.error).map(repo => ' · ' + repo.repo.split('/')[1] + ': ' + repo.error).join('');
@@ -1127,6 +1163,7 @@ document.addEventListener('submit', async event => {
       if (modal.type === 'plansource') repoPlans.delete(args.project);
       $('#dialog').close();
       toast(toastAfter || 'Alteração salva.');
+      if (report) { await load(); render(); adoptionReport(report); return; }
     }
     await load();
     if (modal?.type === 'limits' && formId === 'modal') usageLimits = await api('usage_limits', {});

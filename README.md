@@ -19,6 +19,39 @@ Painel local para planejar, desenvolver e revisar tarefas com Claude Desktop e C
 
 Node.js, SQLite embutido e JavaScript de navegador. Os dados ficam em `data/workspace.sqlite`. O painel escuta somente no loopback e confia nos aplicativos locais. `ORQ_PORT` muda a porta e deve ter o mesmo valor no ambiente do painel e na configuração MCP de cada Desktop. `ORQ_DATA_DIR` muda a pasta de dados. Mantenha o painel, o Node e o `gh` no mesmo ambiente (Windows ou WSL); o conector MCP de cada cliente deve rodar nesse mesmo ambiente.
 
+## Projeto novo: passo a passo
+
+Guarde esta seção: é o roteiro para colocar qualquer produto no painel.
+
+### Caminho A: você cria pelo painel (funciona sempre)
+
+1. Suba o painel (`bash iniciar-painel.sh`) e abra [127.0.0.1:47621](http://127.0.0.1:47621).
+2. Clique no **+** ao lado de PROJETOS. Preencha nome, identificador (ex.: `dieta-mais`) e, em **Repositórios do GitHub**, um repositório por linha (`dono/repositorio` ou o link). Escolha quem é PO, Dev e QA e o login do GitHub do QA. Salve.
+3. O painel faz a **adoção** sozinho e mostra um relatório:
+   - cadastra cada repositório e detecta os documentos de referência (`AGENTS.md` e os de `docs/arquitetura/`);
+   - abre em cada repositório o PR **"docs: seção Orquestrador IA no AGENTS.md"** para a `develop`;
+   - importa o `docs/arquitetura/plano-de-acao.md` de cada repositório para o Kanban.
+4. Faça o merge dos PRs do `AGENTS.md` pelo fluxo normal de cada repositório.
+
+Requisitos: cada repositório precisa ter a branch `develop`, e o `gh` do ambiente do painel precisa ter permissão de escrita neles.
+
+### Caminho B: o Claude cadastra (sessão local com o MCP)
+
+Peça na sessão do PO: *"cadastre este projeto no Orquestrador com os repositórios X e Y"*. Ele usa a ferramenta `cadastrar_projeto`, que faz a mesma adoção do caminho A. Para isso acontecer sem você pedir, inclua o texto de [`docs/trecho-skill-orquestrador.md`](docs/trecho-skill-orquestrador.md) na sua skill de montagem de projeto (ou nas instruções do projeto no Claude Desktop).
+
+Um agente só consegue criar o projeto e acrescentar repositórios. Trocar papéis, mudar configuração e qualquer outra coisa continuam só pelo painel. Sessões na nuvem não alcançam o MCP local: nesse caso use o caminho A.
+
+### Depois, no dia a dia
+
+| Quando | O que fazer |
+| --- | --- |
+| Entrou um repositório novo no produto | **Repositórios → Adotar repositórios**, informando o repositório novo |
+| O PO atualizou o plano de ação | **Kanban → Importar do plano de ação** (ou **Adotar repositórios**, que também reimporta) |
+| Quer conferir se o `AGENTS.md` de todos está em dia | **Repositórios → Adotar repositórios**, sem informar nada: cada cartão mostra o estado |
+| Um PR não aparece no card certo | Confira se o título do PR começa pelo ID da tarefa (`MOB-18b Ações na notificação`) |
+
+Repetir a adoção é seguro: ela não duplica repositório, card nem PR.
+
 ## Conectar os Desktops
 
 O painel fornece um servidor MCP stdio. Você usa as contas que já tem nos Desktops. O comando MCP inicia apenas o conector em Node, e o painel precisa estar rodando na mesma máquina.
