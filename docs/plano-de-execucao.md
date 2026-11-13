@@ -150,6 +150,9 @@ A release é aberta e aprovada pelo Guilherme (`release/X.Y.Z` → `main`).
 - [x] **ORQ-16 Kanban alimentado pelo plano de ação**
   Faz: quadro em colunas por projeto; importação do `plano-de-acao.md` de cada repositório; card sem PR arrastável, card com PR segue o GitHub; PR ligado ao card pelo ID no título.
 
+- [x] **ORQ-17 Adoção de repositórios**
+  Faz: criar o projeto com a lista de repositórios adota todos (documentos, PR do `AGENTS.md`, plano de ação); `cadastrar_projeto` e `adotar_repositorios` no MCP; roteiro no README.
+
 ### Onda 4 — MVP futuro (adiado)
 
 > Decisão de 2026-11-12: não fazer agora. O fluxo segue como está: os pedidos e as sessões continuam no Claude Desktop e no Codex Desktop, e o painel organiza e mostra o andamento. Reavaliar depois de usar o MVP com o Dieta+, se manter sessão aberta ou agendamento configurado virar incômodo.

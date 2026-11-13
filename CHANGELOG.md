@@ -6,6 +6,8 @@
 - **Importação do plano de ação**: cria os cards a partir do `plano-de-acao.md` de cada repositório, com fases, dependências e tarefas já concluídas (`importar_plano` no MCP).
 - PR com o ID da tarefa no título é ligado ao card existente em vez de criar outro.
 - Link direto para a tela de um projeto (`#id-do-projeto/board`).
+- **Adoção de repositórios**: ao criar o projeto com a lista de repositórios (ou em Repositórios → Adotar repositórios), o painel detecta os documentos de referência, abre o PR da seção "Orquestrador IA" no `AGENTS.md` de cada repositório e importa o plano de ação.
+- Tools MCP `cadastrar_projeto` e `adotar_repositorios`: o agente PO cadastra um projeto novo com seus repositórios.
 - PRs abertos para a `develop` entram no pipeline automaticamente, sem tarefa criada nem chamada ao MCP.
 - Veredito do QA sem SHA (`QA: APROVADO`, `QA: CORRIGIR`) e `QA: PRONTO PARA REVISAR` passam a ser reconhecidos.
 - Branches `claude/`, `codex/` e `copilot/` aceitas nos PRs.
